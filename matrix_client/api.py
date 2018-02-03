@@ -54,6 +54,7 @@ class MatrixHttpApi(object):
         base_url (str): The home server URL e.g. 'http://localhost:8008'
         token (str): Optional. The client's access token.
         identity (str): Optional. The mxid to act as (For application services only).
+        loop (BaseEventLoop): Optional. The asyncio event loop.
 
     Examples:
         Create a client and send a message::
@@ -63,13 +64,14 @@ class MatrixHttpApi(object):
             response = matrix.send_message("!roomid:matrix.org", "Hello!")
     """
 
-    def __init__(self, base_url, token=None, identity=None):
+    def __init__(self, base_url, token=None, identity=None, loop=None):
         self.base_url = base_url
         self.token = token
         self.identity = identity
         self.txn_id = 0
         self.validate_cert = True
         self.session = None
+        self.loop = loop
 
     async def sync(self, since=None, timeout_ms=30000, filter=None,
                    full_state=None, set_presence=None):
@@ -708,7 +710,7 @@ class MatrixHttpApi(object):
             content = dumps(content)
 
         if not self.session:
-            self.session = ClientSession()
+            self.session = ClientSession(loop=self.loop)
 
         while True:
             try:
