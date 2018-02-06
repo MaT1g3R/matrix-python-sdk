@@ -480,7 +480,7 @@ class MatrixClient(object):
         etype = state_event["type"]
 
         # Don't keep track of room state if caching turned off
-        if self._cache_level.value != CACHE.NONE:
+        if self._cache_level != CACHE.NONE:
             if etype == "m.room.name":
                 current_room.name = state_event["content"].get("name", None)
             elif etype == "m.room.canonical_alias":
