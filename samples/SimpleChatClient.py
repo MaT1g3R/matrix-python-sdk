@@ -12,16 +12,20 @@
 # 12 - Couldn't find room.
 
 import sys
-import samples_common  # Common bits used between samples
-import logging
 
-from matrix_client.client import MatrixClient
+sys.path.append('../')
+
+import logging
+from asyncio import get_event_loop
+
+import samples_common  # Common bits used between samples
+
 from matrix_client.api import MatrixRequestError
-from requests.exceptions import MissingSchema
+from matrix_client.client import MatrixClient
 
 
 # Called when a message is recieved.
-def on_message(room, event):
+async def on_message(room, event):
     if event['type'] == "m.room.member":
         if event['membership'] == "join":
             print("{0} joined".format(event['content']['displayname']))
@@ -32,11 +36,20 @@ def on_message(room, event):
         print(event['type'])
 
 
-def main(host, username, password, room_id_alias):
-    client = MatrixClient(host)
+async def get_input(room, loop):
+    while True:
+        msg = await loop.run_in_executor(None, samples_common.get_input)
+        if msg == "/quit":
+            break
+        else:
+            await room.send_text(msg)
+
+
+async def main(loop, host, username, password, room_id_alias):
+    client = await MatrixClient(host, loop=loop)
 
     try:
-        client.login_with_password(username, password)
+        await client.login_with_password(username, password)
     except MatrixRequestError as e:
         print(e)
         if e.code == 403:
@@ -45,13 +58,8 @@ def main(host, username, password, room_id_alias):
         else:
             print("Check your sever details are correct.")
             sys.exit(2)
-    except MissingSchema as e:
-        print("Bad URL format.")
-        print(e)
-        sys.exit(3)
-
     try:
-        room = client.join_room(room_id_alias)
+        room = await client.join_room(room_id_alias)
     except MatrixRequestError as e:
         print(e)
         if e.code == 400:
@@ -62,14 +70,8 @@ def main(host, username, password, room_id_alias):
             sys.exit(12)
 
     room.add_listener(on_message)
-    client.start_listener_thread()
-
-    while True:
-        msg = samples_common.get_input()
-        if msg == "/quit":
-            break
-        else:
-            room.send_text(msg)
+    loop.create_task(get_input(room, loop))
+    client.start_listener()
 
 
 if __name__ == '__main__':
@@ -81,4 +83,8 @@ if __name__ == '__main__':
     else:
         room_id_alias = samples_common.get_input("Room ID/Alias: ")
 
-    main(host, username, password, room_id_alias)
+    loop = get_event_loop()
+    loop.create_task(
+        main(loop, host, username, password, room_id_alias)
+    )
+    loop.run_forever()

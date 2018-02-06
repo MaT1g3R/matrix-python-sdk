@@ -52,7 +52,7 @@ class MatrixHttpApi(object):
 
     Args:
         base_url (str): The home server URL e.g. 'http://localhost:8008'
-        token (str): Optional. The client's access token.
+        token (Optional[str]): Optional. The client's access token.
         identity (str): Optional. The mxid to act as (For application services only).
         loop (BaseEventLoop): Optional. The asyncio event loop.
 
@@ -157,7 +157,7 @@ class MatrixHttpApi(object):
         for key in kwargs:
             content[key] = kwargs[key]
 
-        return await self._send("POST", "/login", content)
+        return await self._send("POST", "/login", content=content)
 
     async def logout(self):
         """Perform /logout.
@@ -662,30 +662,33 @@ class MatrixHttpApi(object):
 
     async def _try_send(self, method, endpoint, query_params, content,
                         headers):
-        async with self.session.request(
-                method, endpoint,
-                params=query_params,
-                data=content,
-                headers=headers,
-                verify_ssl=self.validate_cert
-        ) as response:
-            if 200 <= response.status < 300:
-                return MatrixHttpResponse(
-                    success=True,
-                    retry=None,
-                    body=await response.json()
-                )
-            elif response.status == 429:
-                return MatrixHttpResponse(
-                    success=False,
-                    retry=await response.json()["retry_after_ms"] / 1000,
-                    body=None
-                )
-            else:
-                raise MatrixRequestError(
-                    code=response.status,
-                    content=await response.text()
-                )
+        kwargs = {key: val for key, val in {
+            'params': query_params,
+            'data': content,
+            'headers': headers,
+            'verify_ssl': self.validate_cert
+        }.items() if val is not None}
+        async with ClientSession() as session:
+            async with session.request(
+                    method, endpoint, **kwargs
+            ) as response:
+                if 200 <= response.status < 300:
+                    return MatrixHttpResponse(
+                        success=True,
+                        retry=None,
+                        body=await response.json()
+                    )
+                elif response.status == 429:
+                    return MatrixHttpResponse(
+                        success=False,
+                        retry=(await response.json())["retry_after_ms"] / 1000,
+                        body=None
+                    )
+                else:
+                    raise MatrixRequestError(
+                        code=response.status,
+                        content=await response.text()
+                    )
 
     async def _send(self, method, path, content=None, query_params=None,
                     headers=None, api_path=MATRIX_V2_API_PATH):
@@ -699,7 +702,8 @@ class MatrixHttpApi(object):
         if "Content-Type" not in headers:
             headers["Content-Type"] = "application/json"
 
-        query_params["access_token"] = self.token
+        if self.token is not None:
+            query_params["access_token"] = self.token
         if self.identity:
             query_params["user_id"] = self.identity
 
@@ -715,7 +719,8 @@ class MatrixHttpApi(object):
         while True:
             try:
                 resp = await self._try_send(
-                    method, endpoint, query_params, content, headers
+                    method, endpoint=endpoint, query_params=query_params,
+                    content=content, headers=headers
                 )
             except (ClientError, JSONDecodeError)  as e:
                 raise MatrixHttpLibError(e, method, endpoint)

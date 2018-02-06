@@ -12,16 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import logging
+from asyncio import get_event_loop, sleep
+from enum import Enum
+from uuid import uuid4
+
 from .api import MatrixHttpApi
 from .errors import MatrixRequestError, MatrixUnexpectedResponse
 from .room import Room
 from .user import User
-from enum import Enum
-from threading import Thread
-from time import sleep
-from uuid import uuid4
-import logging
-import sys
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class MatrixClient(object):
 
     def __init__(self, base_url, token=None, user_id=None,
                  valid_cert_check=True, sync_filter_limit=20,
-                 cache_level=CACHE.ALL):
+                 cache_level=CACHE.ALL, loop=None):
         """ Create a new Matrix Client object.
 
         Args:
@@ -104,6 +104,7 @@ class MatrixClient(object):
                 certificate on connections?
             cache_level (CACHE): One of CACHE.NONE, CACHE.SOME, or
                 CACHE.ALL (defined in module namespace).
+            loop (BaseEventLoop): Optional. Asyncio event loop.
 
         Returns:
             MatrixClient
@@ -113,8 +114,8 @@ class MatrixClient(object):
         """
         if token is not None and user_id is None:
             raise ValueError("must supply user_id along with token")
-
-        self.api = MatrixHttpApi(base_url, token)
+        self.loop = loop or get_event_loop()
+        self.api = MatrixHttpApi(base_url, token, loop=loop)
         self.api.validate_certificate(valid_cert_check)
         self.listeners = []
         self.presence_listeners = {}
@@ -130,8 +131,10 @@ class MatrixClient(object):
             )
 
         self.sync_token = None
-        self.sync_filter = '{ "room": { "timeline" : { "limit" : %i } } }' \
-            % sync_filter_limit
+        self.sync_filter = (
+                '{ "room": { "timeline" : { "limit" : %i } } }'
+                % sync_filter_limit
+        )
         self.sync_thread = None
         self.should_listen = False
 
@@ -140,20 +143,15 @@ class MatrixClient(object):
         self.rooms = {
             # room_id: Room
         }
-        if token:
-            self.user_id = user_id
-            self._sync()
-
-    def get_sync_token(self):
-        return self.sync_token
-
-    def set_sync_token(self, token):
-        self.sync_token = token
-
-    def set_user_id(self, user_id):
+        self.token = token
         self.user_id = user_id
 
-    def register_as_guest(self):
+    def __await__(self):
+        if self.token:
+            yield from self.sync()
+        return self
+
+    async def register_as_guest(self):
         """ Register a guest account on this HS.
         Note: HS must have guest registration enabled.
         Returns:
@@ -161,10 +159,10 @@ class MatrixClient(object):
         Raises:
             MatrixRequestError
         """
-        response = self.api.register(kind='guest')
-        return self._post_registration(response)
+        response = await self.api.register(kind='guest')
+        return await self._post_registration(response)
 
-    def register_with_password(self, username, password):
+    async def register_with_password(self, username, password):
         """ Register for a new account on this HS.
 
         Args:
@@ -177,31 +175,29 @@ class MatrixClient(object):
         Raises:
             MatrixRequestError
         """
-        response = self.api.register(
+        response = await self.api.register(
             {
                 "auth": {"type": "m.login.dummy"},
                 "username": username,
                 "password": password
             }
         )
-        return self._post_registration(response)
+        return await self._post_registration(response)
 
-    def _post_registration(self, response):
+    async def _post_registration(self, response):
         self.user_id = response["user_id"]
         self.token = response["access_token"]
         self.hs = response["home_server"]
         self.api.token = self.token
-        self._sync()
+        await self.sync()
         return self.token
 
-    def login_with_password_no_sync(self, username, password):
+    async def login_with_password_no_sync(self, username, password):
         """ Login to the homeserver.
 
         Args:
             username (str): Account username
             password (str): Account password
-            limit (int): Deprecated. How many messages to return when syncing.
-                This will be replaced by a filter API in a later release.
 
         Returns:
             str: Access token
@@ -209,7 +205,7 @@ class MatrixClient(object):
         Raises:
             MatrixRequestError
         """
-        response = self.api.login(
+        response = await self.api.login(
             "m.login.password", user=username, password=password
         )
         self.user_id = response["user_id"]
@@ -218,7 +214,7 @@ class MatrixClient(object):
         self.api.token = self.token
         return self.token
 
-    def login_with_password(self, username, password, limit=10):
+    async def login_with_password(self, username, password, limit=10):
         """ Login to the homeserver.
 
         Args:
@@ -233,20 +229,22 @@ class MatrixClient(object):
         Raises:
             MatrixRequestError
         """
-        token = self.login_with_password_no_sync(username, password)
+        token = await self.login_with_password_no_sync(username, password)
 
         """ Limit Filter """
         self.sync_filter = '{ "room": { "timeline" : { "limit" : %i } } }' % limit
-        self._sync()
+        await self.sync()
         return token
 
-    def logout(self):
+    async def logout(self):
         """ Logout from the homeserver.
         """
-        self.stop_listener_thread()
-        self.api.logout()
+        # TODO remove threads
+        # self.stop_listener_thread()
 
-    def create_room(self, alias=None, is_public=False, invitees=()):
+        await self.api.logout()
+
+    async def create_room(self, alias=None, is_public=False, invitees=()):
         """ Create a new room on the homeserver.
 
         Args:
@@ -260,10 +258,10 @@ class MatrixClient(object):
         Raises:
             MatrixRequestError
         """
-        response = self.api.create_room(alias, is_public, invitees)
+        response = await self.api.create_room(alias, is_public, invitees)
         return self._mkroom(response["room_id"])
 
-    def join_room(self, room_id_or_alias):
+    async def join_room(self, room_id_or_alias):
         """ Join a room.
 
         Args:
@@ -275,21 +273,13 @@ class MatrixClient(object):
         Raises:
             MatrixRequestError
         """
-        response = self.api.join_room(room_id_or_alias)
+        response = await self.api.join_room(room_id_or_alias)
         room_id = (
             response["room_id"] if "room_id" in response else room_id_or_alias
         )
         return self._mkroom(room_id)
 
-    def get_rooms(self):
-        """ Return a dict of {room_id: Room objects} that the user has joined.
-
-        Returns:
-            Room{}: Rooms the user has joined.
-
-        """
-        return self.rooms
-
+    # TODO: redo this method
     def add_listener(self, callback, event_type=None):
         """ Add a listener that will send a callback when the client recieves
         an event.
@@ -311,6 +301,7 @@ class MatrixClient(object):
         )
         return listener_uid
 
+    # TODO: redo this method
     def remove_listener(self, uid):
         """ Remove listener with given uid.
 
@@ -320,6 +311,7 @@ class MatrixClient(object):
         self.listeners[:] = (listener for listener in self.listeners
                              if listener['uid'] != uid)
 
+    # TODO: redo this method
     def add_presence_listener(self, callback):
         """ Add a presence listener that will send a callback when the client receives
         a presence update.
@@ -334,6 +326,7 @@ class MatrixClient(object):
         self.presence_listeners[listener_uid] = callback
         return listener_uid
 
+    # TODO: redo this method
     def remove_presence_listener(self, uid):
         """ Remove presence listener with given uid
 
@@ -342,6 +335,7 @@ class MatrixClient(object):
         """
         self.presence_listeners.pop(uid)
 
+    # TODO: redo this method
     def add_ephemeral_listener(self, callback, event_type=None):
         """ Add an ephemeral listener that will send a callback when the client recieves
         an ephemeral event.
@@ -363,13 +357,15 @@ class MatrixClient(object):
         )
         return listener_id
 
+    # TODO: redo this method
     def remove_ephemeral_listener(self, uid):
         """ Remove ephemeral listener with given uid.
 
         Args:
             uuid.UUID: Unique id of the listener to remove.
         """
-        self.ephemeral_listeners[:] = (listener for listener in self.ephemeral_listeners
+        self.ephemeral_listeners[:] = (listener for listener in
+                                       self.ephemeral_listeners
                                        if listener['uid'] != uid)
 
     def add_invite_listener(self, callback):
@@ -390,79 +386,66 @@ class MatrixClient(object):
         """
         self.left_listeners.append(callback)
 
-    def listen_for_events(self, timeout_ms=30000):
-        """Deprecated. sync now pulls events from the request.
-        This function just calls _sync()
-
-        Args:
-            timeout_ms (int): How long to poll the Home Server for before
-               retrying.
-        """
-        self._sync(timeout_ms)
-
-    def listen_forever(self, timeout_ms=30000, exception_handler=None):
+    async def listen_forever(self, timeout_ms=30000, exception_handler=None):
         """ Keep listening for events forever.
 
         Args:
             timeout_ms (int): How long to poll the Home Server for before
                retrying.
-            exception_handler (func(exception)): Optional exception handler
+            exception_handler (callable(exception)): Optional exception handler
                function which can be used to handle exceptions in the caller
                thread.
         """
         bad_sync_timeout = 5000
         self.should_listen = True
-        while (self.should_listen):
+        while self.should_listen:
             try:
-                self._sync(timeout_ms)
+                await self.sync(timeout_ms)
                 bad_sync_timeout = 5
             except MatrixRequestError as e:
                 logger.warning("A MatrixRequestError occured during sync.")
                 if e.code >= 500:
-                    logger.warning("Problem occured serverside. Waiting %i seconds",
-                                   bad_sync_timeout)
-                    sleep(bad_sync_timeout)
+                    logger.warning(
+                        "Problem occured serverside. Waiting %i seconds",
+                        bad_sync_timeout)
+                    await sleep(bad_sync_timeout)
                     bad_sync_timeout = min(bad_sync_timeout * 2,
                                            self.bad_sync_timeout_limit)
                 else:
                     raise e
             except Exception as e:
                 logger.exception("Exception thrown during sync")
-                if exception_handler is not None:
+                if exception_handler:
                     exception_handler(e)
                 else:
                     raise
 
-    def start_listener_thread(self, timeout_ms=30000, exception_handler=None):
+    def start_listener(self, timeout_ms=30000, exception_handler=None):
         """ Start a listener thread to listen for events in the background.
 
         Args:
-            timeout (int): How long to poll the Home Server for before
+            timeout_ms(int): How long to poll the Home Server for before
                retrying.
             exception_handler (func(exception)): Optional exception handler
                function which can be used to handle exceptions in the caller
                thread.
         """
-        try:
-            thread = Thread(target=self.listen_forever,
-                            args=(timeout_ms, exception_handler))
-            thread.daemon = True
-            self.sync_thread = thread
-            self.should_listen = True
-            thread.start()
-        except RuntimeError:
-            e = sys.exc_info()[0]
-            logger.error("Error: unable to start thread. %s", str(e))
+        task = self.loop.create_task(
+            self.listen_forever(timeout_ms, exception_handler)
+        )
+        self.sync_thread = task
+        self.should_listen = True
+        return task
 
     def stop_listener_thread(self):
         """ Stop listener thread running in the background
         """
         if self.sync_thread:
             self.should_listen = False
-            self.sync_thread.join()
             self.sync_thread = None
+            self.loop.stop()
 
-    def upload(self, content, content_type):
+    async def upload(self, content, content_type):
         """ Upload content to the home server and recieve a MXC url.
 
         Args:
@@ -474,7 +457,7 @@ class MatrixClient(object):
             MatrixRequestError: If the upload failed for some reason.
         """
         try:
-            response = self.api.media_upload(content, content_type)
+            response = await self.api.media_upload(content, content_type)
             if "content_uri" in response:
                 return response["content_uri"]
             else:
@@ -497,15 +480,17 @@ class MatrixClient(object):
         etype = state_event["type"]
 
         # Don't keep track of room state if caching turned off
-        if self._cache_level.value >= 0:
+        if self._cache_level.value != CACHE.NONE:
             if etype == "m.room.name":
                 current_room.name = state_event["content"].get("name", None)
             elif etype == "m.room.canonical_alias":
-                current_room.canonical_alias = state_event["content"].get("alias")
+                current_room.canonical_alias = state_event["content"].get(
+                    "alias")
             elif etype == "m.room.topic":
                 current_room.topic = state_event["content"].get("topic", None)
             elif etype == "m.room.aliases":
-                current_room.aliases = state_event["content"].get("aliases", None)
+                current_room.aliases = state_event["content"].get("aliases",
+                                                                  None)
             elif etype == "m.room.member" and self._cache_level == CACHE.ALL:
                 # tracking room members can be large e.g. #matrix:matrix.org
                 if state_event["content"]["membership"] == "join":
@@ -514,32 +499,35 @@ class MatrixClient(object):
                              state_event["state_key"],
                              state_event["content"].get("displayname", None))
                     )
-                elif state_event["content"]["membership"] in ("leave", "kick", "invite"):
+                elif state_event["content"]["membership"] in (
+                        "leave", "kick", "invite"):
                     current_room._rmmembers(state_event["state_key"])
 
         for listener in current_room.state_listeners:
             if (
-                listener['event_type'] is None or
-                listener['event_type'] == state_event['type']
+                    listener['event_type'] is None or
+                    listener['event_type'] == state_event['type']
             ):
-                listener['callback'](state_event)
+                self.loop.create_task(listener['callback'](state_event))
 
-    def _sync(self, timeout_ms=30000):
+    async def sync(self, timeout_ms=30000):
         # TODO: Deal with left rooms
-        response = self.api.sync(self.sync_token, timeout_ms, filter=self.sync_filter)
+        response = await self.api.sync(self.sync_token, timeout_ms,
+                                       filter=self.sync_filter)
         self.sync_token = response["next_batch"]
 
         for presence_update in response['presence']['events']:
             for callback in self.presence_listeners.values():
-                callback(presence_update)
+                self.loop.create_task(callback(presence_update))
 
         for room_id, invite_room in response['rooms']['invite'].items():
             for listener in self.invite_listeners:
-                listener(room_id, invite_room['invite_state'])
+                self.loop.create_task(
+                    listener(room_id, invite_room['invite_state']))
 
         for room_id, left_room in response['rooms']['leave'].items():
             for listener in self.left_listeners:
-                listener(room_id, left_room)
+                self.loop.create_task(listener(room_id, left_room))
             if room_id in self.rooms:
                 del self.rooms[room_id]
 
@@ -561,10 +549,10 @@ class MatrixClient(object):
                 # Dispatch for client (global) listeners
                 for listener in self.listeners:
                     if (
-                        listener['event_type'] is None or
-                        listener['event_type'] == event['type']
+                            listener['event_type'] is None or
+                            listener['event_type'] == event['type']
                     ):
-                        listener['callback'](event)
+                        self.loop.create_task(listener['callback'](event))
 
             for event in sync_room['ephemeral']['events']:
                 event['room_id'] = room_id
@@ -572,10 +560,10 @@ class MatrixClient(object):
 
                 for listener in self.ephemeral_listeners:
                     if (
-                        listener['event_type'] is None or
-                        listener['event_type'] == event['type']
+                            listener['event_type'] is None or
+                            listener['event_type'] == event['type']
                     ):
-                        listener['callback'](event)
+                        self.loop.create_task(listener['callback'](event))
 
     def get_user(self, user_id):
         """ Return a User by their id.
@@ -589,7 +577,7 @@ class MatrixClient(object):
 
         return User(self.api, user_id)
 
-    def remove_room_alias(self, room_alias):
+    async def remove_room_alias(self, room_alias):
         """Remove mapping of an alias
 
         Args:
@@ -599,7 +587,7 @@ class MatrixClient(object):
             bool: True if the alias is removed, False otherwise.
         """
         try:
-            self.api.remove_room_alias(room_alias)
+            await self.api.remove_room_alias(room_alias)
             return True
         except MatrixRequestError:
             return False
