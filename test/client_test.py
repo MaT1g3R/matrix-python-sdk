@@ -283,7 +283,7 @@ async def test_presence_listener():
         accumulator = []
         await client.sync()
     pending = [t for t in asyncio.Task.all_tasks() if
-               t._coro.__name__ == "dummy_callback"]
+               t._coro.__name__ == "__call__"]
     await asyncio.gather(*pending)
     assert accumulator == []
 
