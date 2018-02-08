@@ -1,14 +1,17 @@
 import asyncio
+import json
+from copy import deepcopy
+
 import pytest
 import responses
 from responses import RequestsMock
-import json
-from copy import deepcopy
-from matrix_client.client import Room, User, CACHE
-from matrix_client.api import MATRIX_V2_API_PATH
 
-from .mock_client import MockClient as MatrixClient
+from matrix_client.api import MATRIX_V2_API_PATH
+from matrix_client.client import Room, User, CACHE
+from matrix_client.listener import ListenerType
 from . import response_examples
+from .mock_client import MockClient as MatrixClient
+
 try:
     from urllib import quote
 except ImportError:
@@ -16,22 +19,22 @@ except ImportError:
 
 HOSTNAME = "http://example.com"
 
-
 pytestmark = pytest.mark.asyncio
 
+
 async def test_create_client():
-    await MatrixClient("http://example.com")
+    MatrixClient("http://example.com")
 
 
 async def test_sync_token():
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
     assert client.sync_token is None
     client.sync_token = "FAKE_TOKEN"
     assert client.sync_token == "FAKE_TOKEN"
 
 
 async def test__mkroom():
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
 
     roomId = "!UcYsUzyxTGDxLBEvLz:matrix.org"
     goodRoom = client._mkroom(roomId)
@@ -46,7 +49,7 @@ async def test__mkroom():
 
 
 async def test_get_rooms():
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
     rooms = client.rooms
     assert isinstance(rooms, dict)
     assert len(rooms) == 0
@@ -63,7 +66,7 @@ async def test_get_rooms():
 
 
 async def test_bad_state_events():
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
     room = client._mkroom("!abc:matrix.org")
 
     ev = {
@@ -74,7 +77,7 @@ async def test_bad_state_events():
 
 
 async def test_state_event():
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
     room = client._mkroom("!abc:matrix.org")
 
     room.name = False
@@ -124,7 +127,7 @@ async def test_state_event():
 
 
 async def test_get_user():
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
 
     assert isinstance(client.get_user("@foobar:matrix.org"), User)
 
@@ -135,7 +138,7 @@ async def test_get_user():
 
 
 async def test_get_download_url():
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
     real_url = "http://example.com/_matrix/media/r0/download/foobar"
     assert client.api.get_download_url("mxc://foobar") == real_url
 
@@ -147,12 +150,12 @@ async def test_remove_listener():
     async def dummy_listener():
         pass
 
-    client = await MatrixClient("http://example.com")
-    handler = client.add_listener(dummy_listener)
+    client = MatrixClient("http://example.com")
+    handler = client.add_listener(dummy_listener).uuid
 
     found_listener = False
-    for listener in client.listeners:
-        if listener["uid"] == handler:
+    for listener in client.listeners[ListenerType.ALL]:
+        if listener.uuid == handler:
             found_listener = True
             break
 
@@ -160,8 +163,8 @@ async def test_remove_listener():
 
     client.remove_listener(handler)
     found_listener = False
-    for listener in client.listeners:
-        if listener["uid"] == handler:
+    for listener in client.listeners[ListenerType.ALL]:
+        if listener.uuid == handler:
             found_listener = True
             break
 
@@ -171,7 +174,7 @@ async def test_remove_listener():
 class TestClientRegister:
 
     async def test_register_as_guest(self):
-        cli = await MatrixClient(HOSTNAME)
+        cli = MatrixClient(HOSTNAME)
 
         async def sync(self):
             self._sync_called = True
@@ -195,12 +198,11 @@ class TestClientRegister:
 
 
 async def test_get_rooms_display_name():
-
     def add_members(api, room, num):
         for i in range(num):
             room._mkmembers(User(api, '@frho%s:matrix.org' % i, 'ho%s' % i))
 
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
     client.user_id = "@frho0:matrix.org"
     room1 = client._mkroom("!abc:matrix.org")
     add_members(client.api, room1, 1)
@@ -220,7 +222,7 @@ async def test_get_rooms_display_name():
 
 
 async def test_presence_listener():
-    client = await MatrixClient("http://example.com")
+    client = MatrixClient("http://example.com")
     accumulator = []
 
     async def dummy_callback(event):
@@ -268,40 +270,44 @@ async def test_presence_listener():
 
     with RequestsMock() as r:
         r.add(responses.GET, sync_url, body=response_body)
-        callback_uid = client.add_presence_listener(dummy_callback)
+        callback_uid = client.add_presence_listener(dummy_callback).uuid
         await client.sync()
-    pending = [t for t in asyncio.Task.all_tasks() if t._coro.__name__ == "dummy_callback"]
+    pending = [t for t in asyncio.Task.all_tasks() if
+               t._coro.__name__ == "__call__"]
     await asyncio.gather(*pending)
     assert accumulator == presence_events
-    
+
     with RequestsMock() as r:
         r.add(responses.GET, sync_url, body=response_body)
         client.remove_presence_listener(callback_uid)
         accumulator = []
         await client.sync()
-    pending = [t for t in asyncio.Task.all_tasks() if t._coro.__name__ == "dummy_callback"]
+    pending = [t for t in asyncio.Task.all_tasks() if
+               t._coro.__name__ == "dummy_callback"]
     await asyncio.gather(*pending)
     assert accumulator == []
 
 
 async def test_changing_user_power_levels():
-    client = await MatrixClient(HOSTNAME)
+    client = MatrixClient(HOSTNAME)
     room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
     room = client._mkroom(room_id)
     PL_state_path = HOSTNAME + MATRIX_V2_API_PATH + \
-        "/rooms/" + quote(room_id) + "/state/m.room.power_levels"
-    
+                    "/rooms/" + quote(room_id) + "/state/m.room.power_levels"
+
     with RequestsMock() as r:
         # Code should first get current power_levels and then modify them
         r.add(responses.GET, PL_state_path,
-                      json=response_examples.example_pl_event["content"])
+              json=response_examples.example_pl_event["content"])
         r.add(responses.PUT, PL_state_path,
-                      json=response_examples.example_event_response)
+              json=response_examples.example_event_response)
         # Removes user from user and adds user to to users list
-        assert await room.modify_user_power_levels(users={"@example:localhost": None,
-                                                    "@foobar:example.com": 49})
+        assert await room.modify_user_power_levels(
+            users={"@example:localhost": None,
+                   "@foobar:example.com": 49})
 
-        expected_request = deepcopy(response_examples.example_pl_event["content"])
+        expected_request = deepcopy(
+            response_examples.example_pl_event["content"])
         del expected_request["users"]["@example:localhost"]
         expected_request["users"]["@foobar:example.com"] = 49
 
@@ -309,44 +315,47 @@ async def test_changing_user_power_levels():
 
 
 async def test_changing_default_power_level():
-    client = await MatrixClient(HOSTNAME)
+    client = MatrixClient(HOSTNAME)
     room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
     room = client._mkroom(room_id)
     PL_state_path = HOSTNAME + MATRIX_V2_API_PATH + \
-        "/rooms/" + quote(room_id) + "/state/m.room.power_levels"
-    
+                    "/rooms/" + quote(room_id) + "/state/m.room.power_levels"
+
     with RequestsMock() as r:
         # Code should first get current power_levels and then modify them
         r.add(responses.GET, PL_state_path,
-                      json=response_examples.example_pl_event["content"])
+              json=response_examples.example_pl_event["content"])
         r.add(responses.PUT, PL_state_path,
-                      json=response_examples.example_event_response)
+              json=response_examples.example_event_response)
         assert await room.modify_user_power_levels(users_default=23)
 
-        expected_request = deepcopy(response_examples.example_pl_event["content"])
+        expected_request = deepcopy(
+            response_examples.example_pl_event["content"])
         expected_request["users_default"] = 23
 
         assert json.loads(r.calls[1].request.body) == expected_request
 
 
 async def test_changing_event_required_power_levels():
-    client = await MatrixClient(HOSTNAME)
+    client = MatrixClient(HOSTNAME)
     room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
     room = client._mkroom(room_id)
     PL_state_path = HOSTNAME + MATRIX_V2_API_PATH + \
-        "/rooms/" + quote(room_id) + "/state/m.room.power_levels"
+                    "/rooms/" + quote(room_id) + "/state/m.room.power_levels"
 
     with RequestsMock() as r:
         # Code should first get current power_levels and then modify them
         r.add(responses.GET, PL_state_path,
-                      json=response_examples.example_pl_event["content"])
+              json=response_examples.example_pl_event["content"])
         r.add(responses.PUT, PL_state_path,
-                      json=response_examples.example_event_response)
+              json=response_examples.example_event_response)
         # Remove event from events and adds new controlled event
-        assert await room.modify_required_power_levels(events={"m.room.name": None,
-                                                         "example.event": 51})
+        assert await room.modify_required_power_levels(
+            events={"m.room.name": None,
+                    "example.event": 51})
 
-        expected_request = deepcopy(response_examples.example_pl_event["content"])
+        expected_request = deepcopy(
+            response_examples.example_pl_event["content"])
         del expected_request["events"]["m.room.name"]
         expected_request["events"]["example.event"] = 51
 
@@ -354,23 +363,24 @@ async def test_changing_event_required_power_levels():
 
 
 async def test_changing_other_required_power_levels():
-    client = await MatrixClient(HOSTNAME)
+    client = MatrixClient(HOSTNAME)
     room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
     room = client._mkroom(room_id)
     PL_state_path = HOSTNAME + MATRIX_V2_API_PATH + \
-        "/rooms/" + quote(room_id) + "/state/m.room.power_levels"
+                    "/rooms/" + quote(room_id) + "/state/m.room.power_levels"
 
     with RequestsMock() as r:
         # Code should first get current power_levels and then modify them
         r.add(responses.GET, PL_state_path,
-                      json=response_examples.example_pl_event["content"])
+              json=response_examples.example_pl_event["content"])
         r.add(responses.PUT, PL_state_path,
-                      json=response_examples.example_event_response)
+              json=response_examples.example_event_response)
         # Remove event from events and adds new controlled event
         assert await room.modify_required_power_levels(kick=53, redact=2,
-                                                 state_default=None)
+                                                       state_default=None)
 
-        expected_request = deepcopy(response_examples.example_pl_event["content"])
+        expected_request = deepcopy(
+            response_examples.example_pl_event["content"])
         expected_request["kick"] = 53
         expected_request["redact"] = 2
         del expected_request["state_default"]
@@ -379,9 +389,9 @@ async def test_changing_other_required_power_levels():
 
 
 async def test_cache():
-    m_none = await MatrixClient("http://example.com", cache_level=CACHE.NONE)
-    m_some = await MatrixClient("http://example.com", cache_level=CACHE.SOME)
-    m_all = await MatrixClient("http://example.com", cache_level=CACHE.ALL)
+    m_none = MatrixClient("http://example.com", cache_level=CACHE.NONE)
+    m_some = MatrixClient("http://example.com", cache_level=CACHE.SOME)
+    m_all = MatrixClient("http://example.com", cache_level=CACHE.ALL)
     sync_url = HOSTNAME + MATRIX_V2_API_PATH + "/sync"
     room_id = "!726s6s6q:example.com"
     room_name = "The FooBar"
@@ -403,7 +413,7 @@ async def test_cache():
             "content": {"name": room_name},
         }
     )
-    
+
     with RequestsMock() as r:
         r.add(responses.GET, sync_url, json.dumps(sync_response))
         await m_none.sync()
@@ -420,6 +430,7 @@ async def test_cache():
     assert m_some.rooms[room_id].name == room_name
     assert m_all.rooms[room_id].name == room_name
 
-    assert m_none.rooms[room_id]._members == m_some.rooms[room_id]._members == []
+    assert m_none.rooms[room_id]._members == m_some.rooms[
+        room_id]._members == []
     assert len(m_all.rooms[room_id]._members) == 1
     assert m_all.rooms[room_id]._members[0].user_id == "@alice:example.com"
