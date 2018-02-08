@@ -31,7 +31,7 @@ async def mock_request(self, method, endpoint, query_params, content, headers):
         )
 
 
-class MockClient(client.MatrixClient):
+class MockBaseClient(client.MatrixBaseClient):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.api._try_send = partial(mock_request, self.api)

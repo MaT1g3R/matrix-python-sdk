@@ -16,7 +16,7 @@ Error Codes:
 """
 
 import argparse
-from matrix_client.client import MatrixClient
+from matrix_client.client import MatrixBaseClient
 from matrix_client.api import MatrixRequestError
 from requests.exceptions import MissingSchema, InvalidSchema
 
@@ -27,10 +27,10 @@ def example(host, user, password, token):
     try:
         if token:
             print('token login')
-            client = MatrixClient(host, token=token, user_id=user)
+            client = MatrixBaseClient(host, token=token, user_id=user)
         else:
             print('password login')
-            client = MatrixClient(host)
+            client = MatrixBaseClient(host)
             token = client.login_with_password(user, password)
             print('got token: %s' % token)
     except MatrixRequestError as e:

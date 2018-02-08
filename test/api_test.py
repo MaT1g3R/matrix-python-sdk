@@ -2,14 +2,14 @@ import responses
 from responses import RequestsMock
 import pytest
 
-from .mock_client import MockClient
+from .mock_client import MockBaseClient
 
 
 pytestmark = pytest.mark.asyncio
 
 
 class TestTagsApi:
-    cli = MockClient("http://example.com")
+    cli = MockBaseClient("http://example.com")
     user_id = "@user:matrix.org"
     room_id = "#foo:matrix.org"
 
@@ -45,7 +45,7 @@ class TestTagsApi:
 
 
 class TestAccountDataApi:
-    cli = MockClient("http://example.com")
+    cli = MockBaseClient("http://example.com")
     user_id = "@user:matrix.org"
     room_id = "#foo:matrix.org"
 
@@ -71,7 +71,7 @@ class TestAccountDataApi:
 
 
 class TestUnbanApi:
-    cli = MockClient("http://example.com")
+    cli = MockBaseClient("http://example.com")
     user_id = "@user:matrix.org"
     room_id = "#foo:matrix.org"
 

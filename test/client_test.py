@@ -9,13 +9,19 @@ from responses import RequestsMock
 from matrix_client.api import MATRIX_V2_API_PATH
 from matrix_client.client import Room, User
 from matrix_client.enums import CACHE
+from matrix_client.listener import ListenerClientMixin
 from . import response_examples
-from .mock_client import MockClient as MatrixClient
+from .mock_client import MockBaseClient
 
 try:
     from urllib import quote
 except ImportError:
     from urllib.parse import quote
+
+
+class MatrixClient(ListenerClientMixin, MockBaseClient):
+    pass
+
 
 HOSTNAME = "http://example.com"
 
@@ -272,8 +278,13 @@ async def test_presence_listener():
         r.add(responses.GET, sync_url, body=response_body)
         callback_uid = client.add_presence_listener(dummy_callback).uuid
         await client.sync()
+    task = client._create_task(client.consume_events())
     pending = [t for t in asyncio.Task.all_tasks() if
                t._coro.__name__ == "__call__"]
+    try:
+        await asyncio.wait_for(task, timeout=1)
+    except asyncio.TimeoutError:
+        pass
     await asyncio.gather(*pending)
     assert accumulator == presence_events
 
@@ -284,6 +295,11 @@ async def test_presence_listener():
         await client.sync()
     pending = [t for t in asyncio.Task.all_tasks() if
                t._coro.__name__ == "__call__"]
+    task = client._create_task(client.consume_events())
+    try:
+        await asyncio.wait_for(task, timeout=1)
+    except asyncio.TimeoutError:
+        pass
     await asyncio.gather(*pending)
     assert accumulator == []
 

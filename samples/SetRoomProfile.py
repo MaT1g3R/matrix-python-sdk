@@ -11,14 +11,14 @@
 import sys
 import samples_common
 
-from matrix_client.client import MatrixClient
+from matrix_client.client import MatrixBaseClient
 from matrix_client.api import MatrixRequestError
 from requests.exceptions import MissingSchema
 
 
 host, username, password = samples_common.get_user_details(sys.argv)
 
-client = MatrixClient(host)
+client = MatrixBaseClient(host)
 
 try:
     client.login_with_password_no_sync(username, password)

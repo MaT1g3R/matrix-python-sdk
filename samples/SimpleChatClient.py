@@ -21,7 +21,7 @@ from asyncio import get_event_loop
 import samples_common  # Common bits used between samples
 
 from matrix_client.api import MatrixRequestError
-from matrix_client.client import MatrixClient
+from matrix_client.client import MatrixBaseClient
 
 
 # Called when a message is recieved.
@@ -46,7 +46,7 @@ async def get_input(room, loop):
 
 
 async def main(loop, host, username, password, room_id_alias):
-    client = await MatrixClient(host, loop=loop)
+    client = await MatrixBaseClient(host, loop=loop)
 
     try:
         await client.login_with_password(username, password)
