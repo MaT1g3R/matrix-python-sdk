@@ -713,9 +713,6 @@ class MatrixHttpApi(object):
             "Content-Type"] == "application/json" and content is not None:
             content = dumps(content)
 
-        if not self.session:
-            self.session = ClientSession(loop=self.loop)
-
         while True:
             try:
                 resp = await self._try_send(

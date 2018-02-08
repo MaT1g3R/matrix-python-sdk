@@ -517,8 +517,8 @@ class MatrixClient(object):
 
         for listener in current_room.state_listeners:
             if (
-                    listener['event_type'] is None or
-                    listener['event_type'] == state_event['type']
+                    listener.event_type is None or
+                    listener.event_type == state_event['type']
             ):
                 self.__create_task(listener(state_event))
 
@@ -561,8 +561,8 @@ class MatrixClient(object):
                 # Dispatch for client (global) listeners
                 for listener in self.listeners[ListenerType.ALL]:
                     if (
-                            listener['event_type'] is None or
-                            listener['event_type'] == event['type']
+                            listener.event_type is None or
+                            listener.event_type == event['type']
                     ):
                         self.__create_task(listener(event))
 
@@ -572,8 +572,8 @@ class MatrixClient(object):
 
                 for listener in self.ephemeral_listeners:
                     if (
-                            listener['event_type'] is None or
-                            listener['event_type'] == event['type']
+                            listener.event_type is None or
+                            listener.event_type == event['type']
                     ):
                         self.__create_task(listener(event))
 
