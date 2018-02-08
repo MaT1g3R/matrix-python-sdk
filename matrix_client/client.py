@@ -14,24 +14,17 @@
 # limitations under the License.
 
 import logging
-from asyncio import get_event_loop, sleep, ensure_future
+from asyncio import ensure_future, get_event_loop, sleep
 from collections import defaultdict
-from enum import Enum
 
-from matrix_client.listener import ListenerType, Listener
+from matrix_client.listener import Listener
 from .api import MatrixHttpApi
+from .enums import CACHE, ListenerType
 from .errors import MatrixRequestError, MatrixUnexpectedResponse
 from .room import Room
 from .user import User
 
 logger = logging.getLogger(__name__)
-
-
-# Cache constants used when instantiating Matrix Client to specify level of caching
-class CACHE(Enum):
-    NONE = -1
-    SOME = 0
-    ALL = 1
 
 
 class MatrixClient(object):
@@ -104,7 +97,7 @@ class MatrixClient(object):
             valid_cert_check (bool): Check the homeservers
                 certificate on connections?
             cache_level (CACHE): One of CACHE.NONE, CACHE.SOME, or
-                CACHE.ALL (defined in module namespace).
+                CACHE.ALL(defined in module namespace).
             loop (BaseEventLoop): Optional. Asyncio event loop.
 
         Returns:
@@ -122,7 +115,6 @@ class MatrixClient(object):
         if isinstance(cache_level, CACHE):
             self._cache_level = cache_level
         else:
-            self._cache_level = CACHE.ALL
             raise ValueError(
                 "cache_level must be one of CACHE.NONE, CACHE.SOME, CACHE.ALL"
             )
@@ -135,7 +127,7 @@ class MatrixClient(object):
         self.sync_task = None
         self.should_listen = False
 
-        """ Time to wait before attempting a /sync request after failing."""
+        # Time to wait before attempting a /sync request after failing.
         self.bad_sync_timeout_limit = 60 * 60
         self.rooms = {
             # room_id: Room
@@ -144,6 +136,10 @@ class MatrixClient(object):
         self.user_id = user_id
         if self.token:
             self.__create_task(self.sync())
+
+    @property
+    def global_listeners(self):
+        return self.listeners[ListenerType.GLOBAL]
 
     @property
     def presence_listeners(self):
@@ -258,7 +254,7 @@ class MatrixClient(object):
         """
         token = await self.login_with_password_no_sync(username, password)
 
-        """ Limit Filter """
+        # Limit Filter
         self.sync_filter = '{ "room": { "timeline" : { "limit" : %i } } }' % limit
         await self.sync()
         return token
@@ -305,7 +301,7 @@ class MatrixClient(object):
         return self._mkroom(room_id)
 
     def add_listener(self, callback, event_type=None,
-                     listener_type=ListenerType.ALL) -> Listener:
+                     listener_type=ListenerType.GLOBAL) -> Listener:
         """ Add a listener that will send a callback when the client recieves
         an event.
 
@@ -327,17 +323,44 @@ class MatrixClient(object):
         self.listeners[listener_type].add(listener)
         return listener
 
-    def remove_listener(self, uid, listener_type=ListenerType.ALL):
+    def remove_listener(self, uid, listener_type=ListenerType.GLOBAL):
         """ Remove listener with given uid.
 
         Args:
             uuid.UUID: Unique id of the listener to remove.
             listener_type (ListenerType); The type of the listener to
-                remove. Default is ALL.
+                remove. Default is GLOBAL.
         """
-        self.listeners[listener_type] = {lis for lis in
-                                         self.listeners[listener_type] if
-                                         lis.uuid != uid}
+        self.listeners[listener_type] = {
+            lis for lis in
+            self.listeners[listener_type] if
+            lis.uuid != uid
+        }
+
+    def add_global_listener(self, callback, event_type=None) -> Listener:
+        """
+        Add a global listner that will send a callback on all events.
+        Args:
+            callback: The call back coroutine.
+            event_type: The event type to filter for.
+
+        Returns:
+            The listener created.
+
+        """
+        return self.add_listener(
+            callback,
+            event_type=event_type,
+            listener_type=ListenerType.GLOBAL
+        )
+
+    def remove_global_listener(self, uid):
+        """
+        Remove global listener with give uid.
+        Args:
+            uid (uuid.UUID): Unique id of the listener to remove.
+        """
+        self.remove_listener(uid, ListenerType.GLOBAL)
 
     def add_presence_listener(self, callback) -> Listener:
         """ Add a presence listener that will send a callback when the client receives
@@ -559,7 +582,7 @@ class MatrixClient(object):
                 room._put_event(event)
 
                 # Dispatch for client (global) listeners
-                for listener in self.listeners[ListenerType.ALL]:
+                for listener in self.global_listeners:
                     if (
                             listener.event_type is None or
                             listener.event_type == event['type']

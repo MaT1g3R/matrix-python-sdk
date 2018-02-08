@@ -7,8 +7,8 @@ import responses
 from responses import RequestsMock
 
 from matrix_client.api import MATRIX_V2_API_PATH
-from matrix_client.client import Room, User, CACHE
-from matrix_client.listener import ListenerType
+from matrix_client.client import Room, User
+from matrix_client.enums import CACHE
 from . import response_examples
 from .mock_client import MockClient as MatrixClient
 
@@ -151,10 +151,10 @@ async def test_remove_listener():
         pass
 
     client = MatrixClient("http://example.com")
-    handler = client.add_listener(dummy_listener).uuid
+    handler = client.add_global_listener(dummy_listener).uuid
 
     found_listener = False
-    for listener in client.listeners[ListenerType.ALL]:
+    for listener in client.global_listeners:
         if listener.uuid == handler:
             found_listener = True
             break
@@ -163,7 +163,7 @@ async def test_remove_listener():
 
     client.remove_listener(handler)
     found_listener = False
-    for listener in client.listeners[ListenerType.ALL]:
+    for listener in client.global_listeners:
         if listener.uuid == handler:
             found_listener = True
             break

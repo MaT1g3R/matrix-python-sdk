@@ -1,16 +1,9 @@
-from enum import Enum
 from inspect import iscoroutinefunction
 from uuid import uuid4
 
 import attr
 
-
-class ListenerType(Enum):
-    ALL = 0
-    PRESENCE = 1
-    INVITE = 2
-    LEAVE = 3
-    EPHEMERAL = 4
+from .enums import ListenerType
 
 
 @attr.s(frozen=True)
@@ -18,7 +11,7 @@ class Listener:
     callback = attr.ib()
     client = attr.ib()
     uuid = attr.ib(default=uuid4(), init=False)
-    listener_type = attr.ib()
+    listener_type = attr.ib(type=ListenerType)
     event_type = attr.ib(default=None)
 
     @callback.validator
