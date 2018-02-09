@@ -279,7 +279,7 @@ async def test_presence_listener():
         callback_uid = client.add_presence_listener(dummy_callback).uuid
         await client.sync()
     client.should_listen = True
-    task = client._create_task(client.consume_events())
+    task = client.create_task(client.consume_events())
     pending = [t for t in asyncio.Task.all_tasks() if
                t._coro.__name__ == "__call__"]
     try:
@@ -296,7 +296,7 @@ async def test_presence_listener():
         await client.sync()
     pending = [t for t in asyncio.Task.all_tasks() if
                t._coro.__name__ == "__call__"]
-    task = client._create_task(client.consume_events())
+    task = client.create_task(client.consume_events())
     try:
         await asyncio.wait_for(task, timeout=1)
     except asyncio.TimeoutError:

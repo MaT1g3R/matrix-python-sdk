@@ -70,7 +70,7 @@ async def main(loop, host, username, password, room_id_alias):
             sys.exit(12)
 
     room.add_listener(on_message)
-    client._create_task(get_input(room, loop))
+    client.create_task(get_input(room, loop))
     client.start_listener()
 
 

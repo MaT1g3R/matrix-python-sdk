@@ -142,7 +142,7 @@ class MatrixBaseClient(object):
         self.user_id = user_id
         self.logger = logger
         if self.token:
-            self._create_task(self.sync())
+            self.create_task(self.sync())
 
     async def on_exception(self, e):
         """
@@ -303,7 +303,7 @@ class MatrixBaseClient(object):
                 else:
                     raise e
             except Exception as e:
-                self._create_task(self.on_exception(e))
+                self.create_task(self.on_exception(e))
 
     def start_listener(self, timeout_ms=30000):
         """ Start a listener thread to listen for events in the background.
@@ -312,7 +312,7 @@ class MatrixBaseClient(object):
             timeout_ms(int): How long to poll the Home Server for before
                retrying.
         """
-        task = self._create_task(
+        task = self.create_task(
             self.listen_forever(timeout_ms)
         )
         self.sync_task = task
@@ -390,7 +390,7 @@ class MatrixBaseClient(object):
                     listener.event_type is None or
                     listener.event_type == state_event['type']
             ):
-                self._create_task(listener(state_event))
+                self.create_task(listener(state_event))
 
     async def sync(self, timeout_ms=30000):
         # TODO: Deal with left rooms
@@ -485,7 +485,7 @@ class MatrixBaseClient(object):
         except MatrixRequestError:
             return False
 
-    def _create_task(self, coro):
+    def create_task(self, coro):
         return ensure_future(coro, loop=self.loop)
 
 
