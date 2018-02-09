@@ -207,11 +207,11 @@ class ListenerClientMixin:
             timeout_ms(int): How long to poll the Home Server for before
                retrying.
         """
-        super()._create_task(self.consume_events())
+        self._create_task(self.consume_events())
         return super().start_listener(timeout_ms)
 
     async def consume_events(self):
-        while True:
+        while self.should_listen:
             event = await self.event_queue.get()
             if event.type == ListenerType.GLOBAL:
                 for listener in self.global_listeners:
@@ -219,20 +219,20 @@ class ListenerClientMixin:
                             listener.event_type is None or
                             listener.event_type == event.event['type']
                     ):
-                        super()._create_task(listener(event.event))
+                        self._create_task(listener(event.event))
             elif event.type == ListenerType.PRESENCE:
                 for listener in self.presence_listeners:
-                    super()._create_task(listener(event.event))
+                    self._create_task(listener(event.event))
             elif event.type == ListenerType.INVITE:
                 for listener in self.invite_listeners:
-                    super()._create_task(listener(event.room_id, event.event))
+                    self._create_task(listener(event.room_id, event.event))
             elif event.type == ListenerType.LEAVE:
                 for listener in self.left_listeners:
-                    super()._create_task(listener(event.room_id, event.event))
+                    self._create_task(listener(event.room_id, event.event))
             elif event.type == ListenerType.EPHEMERAL:
                 for listener in self.ephemeral_listeners:
                     if (
                             listener.event_type is None or
                             listener.event_type == event.event['type']
                     ):
-                        super()._create_task(listener(event.event))
+                        self._create_task(listener(event.event))

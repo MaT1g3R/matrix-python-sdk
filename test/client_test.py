@@ -278,6 +278,7 @@ async def test_presence_listener():
         r.add(responses.GET, sync_url, body=response_body)
         callback_uid = client.add_presence_listener(dummy_callback).uuid
         await client.sync()
+    client.should_listen = True
     task = client._create_task(client.consume_events())
     pending = [t for t in asyncio.Task.all_tasks() if
                t._coro.__name__ == "__call__"]
