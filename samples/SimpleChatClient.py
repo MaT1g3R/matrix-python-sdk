@@ -16,12 +16,12 @@ import sys
 sys.path.append('../')
 
 import logging
-from asyncio import get_event_loop
+from asyncio import get_event_loop, ensure_future
 
 import samples_common  # Common bits used between samples
 
 from matrix_client.api import MatrixRequestError
-from matrix_client.client import MatrixBaseClient
+from matrix_client.client import MatrixListenerClient
 
 
 # Called when a message is recieved.
@@ -46,7 +46,7 @@ async def get_input(room, loop):
 
 
 async def main(loop, host, username, password, room_id_alias):
-    client = await MatrixBaseClient(host, loop=loop)
+    client = MatrixListenerClient(host, loop=loop)
 
     try:
         await client.login_with_password(username, password)
@@ -70,7 +70,7 @@ async def main(loop, host, username, password, room_id_alias):
             sys.exit(12)
 
     room.add_listener(on_message)
-    loop.create_task(get_input(room, loop))
+    client._create_task(get_input(room, loop))
     client.start_listener()
 
 
@@ -84,7 +84,8 @@ if __name__ == '__main__':
         room_id_alias = samples_common.get_input("Room ID/Alias: ")
 
     loop = get_event_loop()
-    loop.create_task(
-        main(loop, host, username, password, room_id_alias)
+    ensure_future(
+        main(loop, host, username, password, room_id_alias),
+        loop=loop
     )
     loop.run_forever()

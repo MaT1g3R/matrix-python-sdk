@@ -54,7 +54,7 @@ class ListenerClientMixin:
 
     @property
     def left_listeners(self):
-        return self.listeners[ListenerType.LEFT]
+        return self.listeners[ListenerType.LEAVE]
 
     @property
     def ephemeral_listeners(self):
@@ -67,7 +67,7 @@ class ListenerClientMixin:
         Args:
             e: The exception raised by the listener.
         """
-        super().logger.warning(str(e))
+        self.logger.warning(str(e))
 
     def add_listener(self, callback, event_type=None,
                      listener_type=ListenerType.GLOBAL) -> Listener:
