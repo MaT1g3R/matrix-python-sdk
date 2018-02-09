@@ -5,6 +5,7 @@ from uuid import uuid4
 import attr
 
 from .enums import ListenerType
+from .event import Presence, Event, InvitedRoom, LeftRoom
 
 
 @attr.s(frozen=True)
@@ -213,26 +214,27 @@ class ListenerClientMixin:
     async def consume_events(self):
         while self.should_listen:
             event = await self.event_queue.get()
-            if event.type == ListenerType.GLOBAL:
-                for listener in self.global_listeners:
-                    if (
-                            listener.event_type is None or
-                            listener.event_type == event.event['type']
-                    ):
-                        self.create_task(listener(event.event))
-            elif event.type == ListenerType.PRESENCE:
-                for listener in self.presence_listeners:
-                    self.create_task(listener(event.event))
-            elif event.type == ListenerType.INVITE:
-                for listener in self.invite_listeners:
-                    self.create_task(listener(event.room_id, event.event))
-            elif event.type == ListenerType.LEAVE:
-                for listener in self.left_listeners:
-                    self.create_task(listener(event.room_id, event.event))
-            elif event.type == ListenerType.EPHEMERAL:
+            if isinstance(event, Event) \
+                    and event.listener_type == ListenerType.EPHEMERAL:
                 for listener in self.ephemeral_listeners:
                     if (
                             listener.event_type is None or
-                            listener.event_type == event.event['type']
+                            listener.event_type == event.type
                     ):
-                        self.create_task(listener(event.event))
+                        self.create_task(listener(event))
+            elif isinstance(event, Event):
+                for listener in self.global_listeners:
+                    if (
+                            listener.event_type is None or
+                            listener.event_type == event.type
+                    ):
+                        self.create_task(listener(event))
+            elif isinstance(event, Presence):
+                for listener in self.presence_listeners:
+                    self.create_task(listener(event))
+            elif isinstance(event, InvitedRoom):
+                for listener in self.invite_listeners:
+                    self.create_task(listener(event))
+            elif isinstance(event, LeftRoom):
+                for listener in self.left_listeners:
+                    self.create_task(listener(event))

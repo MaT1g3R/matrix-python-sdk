@@ -15,22 +15,17 @@
 
 import logging
 from asyncio import Queue, ensure_future, get_event_loop, sleep
-from typing import NamedTuple, Optional
 
 from .api import MatrixHttpApi
-from .enums import CACHE, ListenerType
+from .enums import CACHE
 from .errors import MatrixRequestError, MatrixUnexpectedResponse
+from .event import Presence, InvitedRoom, InviteState, Event, LeftRoom, \
+    Timeline, JoinedRoom
 from .listener import ListenerClientMixin
 from .room import Room
 from .user import User
 
 logger = logging.getLogger(__name__)
-
-
-class Event(NamedTuple):
-    type: ListenerType
-    event: dict
-    room_id: Optional[str] = None
 
 
 class MatrixBaseClient(object):
@@ -399,64 +394,51 @@ class MatrixBaseClient(object):
         self.sync_token = response["next_batch"]
 
         for presence_update in response['presence']['events']:
-            self.event_queue.put_nowait(
-                Event(
-                    event=presence_update,
-                    type=ListenerType.PRESENCE
-                )
-            )
+            self.event_queue.put_nowait(Presence(**presence_update))
 
         for room_id, invite_room in response['rooms']['invite'].items():
-            self.event_queue.put_nowait(
-                Event(
-                    type=ListenerType.INVITE,
-                    event=invite_room['invite_state'],
-                    room_id=room_id
-                )
-            )
+            invite_states = [
+                InviteState(**x)
+                for x in invite_room['invite_state'].get('events', [])
+            ]
+            self.event_queue.put_nowait(InvitedRoom(
+                room_id=room_id,
+                invite_states=invite_states
+            ))
 
         for room_id, left_room in response['rooms']['leave'].items():
-            self.event_queue.put_nowait(
-                Event(
-                    type=ListenerType.LEAVE,
-                    event=left_room,
-                    room_id=room_id
-                )
-            )
+            left_states = [
+                Event.from_dict(x) for x in left_room.get('events', [])
+            ]
+            timeline = left_room.get('timeline')
+            timeline_obj = Timeline.from_dict(timeline) if timeline else None
+            self.event_queue.put_nowait(LeftRoom(
+                room_id=room_id,
+                left_states=left_states,
+                timeline=timeline_obj
+            ))
             if room_id in self.rooms:
                 del self.rooms[room_id]
 
         for room_id, sync_room in response['rooms']['join'].items():
+            sync_room['room_id'] = room_id
+            joined_room = JoinedRoom.from_dict(sync_room)
             if room_id not in self.rooms:
                 # TODO: don't keep track of joined rooms for self._cache_level==CACHE.NONE
                 self._mkroom(room_id)
             room = self.rooms[room_id]
-            room.prev_batch = sync_room["timeline"]["prev_batch"]
+            room.prev_batch = joined_room.timeline.prev_batch
 
-            for event in sync_room["state"]["events"]:
-                event['room_id'] = room_id
+            for event in joined_room.state:
                 self._process_state_event(event, room)
 
-            for event in sync_room["timeline"]["events"]:
-                event['room_id'] = room_id
+            for event in joined_room.timeline.events:
                 room._put_event(event)
-                self.event_queue.put_nowait(
-                    Event(
-                        type=ListenerType.GLOBAL,
-                        event=event
-                    )
-                )
+                self.event_queue.put_nowait(event)
 
-            for event in sync_room['ephemeral']['events']:
-                event['room_id'] = room_id
+            for event in joined_room.ephemeral:
                 room._put_ephemeral_event(event)
-
-                self.event_queue.put_nowait(
-                    Event(
-                        type=ListenerType.EPHEMERAL,
-                        event=event
-                    )
-                )
+                self.event_queue.put_nowait(event)
 
     def get_user(self, user_id):
         """ Return a User by their id.
