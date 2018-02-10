@@ -1,4 +1,3 @@
-from asyncio import sleep
 from collections import defaultdict
 from inspect import iscoroutinefunction
 from uuid import uuid4
@@ -96,7 +95,7 @@ class ListenerClientMixin:
         self.create_task(self.consume_events())
         return super().start_listener(timeout_ms)
 
-    async def dispatch_event(self, event):
+    def dispatch_event(self, event):
         for listener in self.listeners[event.listener_type]:
             if not listener.event_type:
                 self.create_task(listener(event))
@@ -108,9 +107,8 @@ class ListenerClientMixin:
                 else:
                     if listener.event_type == event_type:
                         self.create_task(listener(event))
-            await sleep(0)
 
     async def consume_events(self):
         while self.should_listen:
             event = await self.event_queue.get()
-            await self.dispatch_event(event)
+            self.dispatch_event(event)
