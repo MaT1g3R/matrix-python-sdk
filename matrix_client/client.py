@@ -19,7 +19,7 @@ from asyncio import Queue, ensure_future, get_event_loop, sleep
 from .api import MatrixHttpApi
 from .enums import CACHE, ListenerType
 from .errors import MatrixRequestError, MatrixUnexpectedResponse
-from .event import InvitedRoom, InviteState, Event, LeftRoom, \
+from .event import InvitedRoom, Event, LeftRoom, \
     Timeline, JoinedRoom
 from .listener import ListenerClientMixin
 from .room import Room
@@ -238,7 +238,6 @@ class MatrixBaseClient(object):
         """ Logout from the homeserver.
         """
         await self.api.logout()
-        self.loop.stop()
 
     async def create_room(self, alias=None, is_public=False, invitees=()):
         """ Create a new room on the homeserver.
@@ -398,7 +397,7 @@ class MatrixBaseClient(object):
 
         for room_id, invite_room in response['rooms']['invite'].items():
             invite_states = [
-                InviteState(**x)
+                Event.from_dict(x)
                 for x in invite_room['invite_state'].get('events', [])
             ]
             self.event_queue.put_nowait(InvitedRoom(

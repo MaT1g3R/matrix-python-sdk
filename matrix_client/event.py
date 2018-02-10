@@ -23,6 +23,9 @@ class Signed:
 @dataclass(slots=True, frozen=True)
 class UnsignedData:
     __weakref__: Any = weakref_attrib
+    prev_content: dict = {}
+    prev_sender: MaybeStr = None
+    replaces_state: MaybeStr = None
     age: MaybeInt = None
     redacted_because: Optional["Event"] = None
     transaction_id: MaybeStr = None
@@ -31,8 +34,9 @@ class UnsignedData:
 @dataclass(slots=True)
 class Event:
     __weakref__: Any = weakref_attrib
-    content: MaybeDict = {}
-    prev_content: MaybeDict = {}
+    content: dict = {}
+    prev_content: dict = {}
+    membership: MaybeStr = None
     txn_id: MaybeStr = None
     age: MaybeInt = None
     state_key: str = None
@@ -69,19 +73,10 @@ class Invite:
 
 
 @dataclass(slots=True, frozen=True)
-class InviteState:
-    __weakref__: Any = weakref_attrib
-    sender: MaybeStr = None
-    type: MaybeStr = None
-    state_key: MaybeStr = None
-    content: MaybeDict = None
-
-
-@dataclass(slots=True, frozen=True)
 class InvitedRoom:
     __weakref__: Any = weakref_attrib
     room_id: str
-    invite_states: List[InviteState] = []
+    invite_states: List[Event] = []
     listener_type: ListenerType = attrib(
         default=ListenerType.INVITE, init=False
     )
