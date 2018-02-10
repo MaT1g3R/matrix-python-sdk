@@ -1,7 +1,7 @@
 import re
-from uuid import uuid4
 
 from .errors import MatrixRequestError
+from .event import Event
 from .user import User
 
 
@@ -25,11 +25,6 @@ class Room(object):
 
         self.room_id = room_id
         self.client = client
-        self.listeners = []
-        self.state_listeners = []
-        self.ephemeral_listeners = []
-        self.events = []
-        self.event_history_limit = 20
         self.name = None
         self.canonical_alias = None
         self.aliases = []
@@ -53,7 +48,7 @@ class Room(object):
         await self.client.api.set_membership(
             self.room_id,
             self.client.user_id,
-            'join',
+            "join",
             reason, {
                 "displayname": displayname,
                 "avatar_url": avatar_url
@@ -236,95 +231,6 @@ class Room(object):
         """
         return await self.client.api.redact_event(self.room_id, event_id,
                                                   reason)
-
-    def add_listener(self, callback, event_type=None):
-        """ Add a callback handler for events going to this room.
-
-        Args:
-            callback (func(room, event)): Callback called when an event arrives.
-            event_type (str): The event_type to filter for.
-        Returns:
-            uuid.UUID: Unique id of the listener, can be used to identify the listener.
-        """
-        listener_id = uuid4()
-        self.listeners.append(
-            {
-                'uid': listener_id,
-                'callback': callback,
-                'event_type': event_type
-            }
-        )
-        return listener_id
-
-    def remove_listener(self, uid):
-        """ Remove listener with given uid.
-
-        Args:
-            uuid.UUID: Unique id of the listener to remove.
-        """
-        self.listeners = [listener for listener in self.listeners if
-                          listener['uid'] != uid]
-
-    def add_ephemeral_listener(self, callback, event_type=None):
-        """ Add a callback handler for ephemeral events going to this room.
-
-        Args:
-            callback (func(room, event)): Callback called when an ephemeral event arrives.
-            event_type (str): The event_type to filter for.
-        Returns:
-            uuid.UUID: Unique id of the listener, can be used to identify the listener.
-        """
-        listener_id = uuid4()
-        self.ephemeral_listeners.append(
-            {
-                'uid': listener_id,
-                'callback': callback,
-                'event_type': event_type
-            }
-        )
-        return listener_id
-
-    def remove_ephemeral_listener(self, uid):
-        """ Remove ephemeral listener with given uid.
-
-        Args:
-            uuid.UUID: Unique id of the listener to remove.
-        """
-        self.ephemeral_listeners = [listener for listener in
-                                    self.ephemeral_listeners
-                                    if listener['uid'] != uid]
-
-    def add_state_listener(self, callback, event_type=None):
-        """ Add a callback handler for state events going to this room.
-
-        Args:
-            callback (func(roomchunk)): Callback called when an event arrives.
-            event_type (str): The event_type to filter for.
-        """
-        self.state_listeners.append(
-            {
-                'callback': callback,
-                'event_type': event_type
-            }
-        )
-
-    def _put_event(self, event):
-        self.events.append(event)
-        if len(self.events) > self.event_history_limit:
-            self.events.pop(0)
-
-        # Dispatch for room-specific listeners
-        for listener in self.listeners:
-            if listener['event_type'] is None or listener['event_type'] == \
-                    event['type']:
-                self.client.loop.create_task(listener['callback'](self, event))
-
-    def _put_ephemeral_event(self, event):
-        # Dispatch for room-specific listeners
-        for listener in self.ephemeral_listeners:
-            if listener['event_type'] is None or listener['event_type'] == \
-                    event['type']:
-                self.client.loop.create_task(listener['callback'](self, event))
 
     async def invite_user(self, user_id):
         """ Invite a user to this room
@@ -549,7 +455,9 @@ class Room(object):
         if not reverse:
             events = reversed(events)
         for event in events:
-            self._put_event(event)
+            self.client.room_event_queue.put_nowait(
+                (Event.from_dict(event), self)
+            )
 
     async def modify_user_power_levels(self, users=None, users_default=None):
         """Modify the power level for a subset of users

@@ -14,3 +14,4 @@ class ListenerType(Enum):
     INVITE = 2
     LEAVE = 3
     EPHEMERAL = 4
+    STATE = 5

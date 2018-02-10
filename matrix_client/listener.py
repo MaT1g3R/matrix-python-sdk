@@ -13,8 +13,8 @@ class Listener:
     client = attr.ib()
     uuid = attr.ib(default=uuid4(), init=False)
     listener_type = attr.ib(type=ListenerType)
-    event_type = attr.ib(default=None)
-    room_id = attr.ib(default=None)
+    event_type = attr.ib(default=None, type=str)
+    room_id = attr.ib(default=None, type=str)
 
     @callback.validator
     def is_coro(self, attribute, value):
@@ -53,8 +53,10 @@ class ListenerClientMixin:
         """
         self.logger.warning(str(e))
 
-    def add_listener(self, callback, event_type=None,
-                     listener_type=ListenerType.GLOBAL) -> Listener:
+    def add_listener(
+            self, callback, event_type=None,
+            listener_type=ListenerType.GLOBAL
+    ) -> Listener:
         """ Add a listener that will send a callback when the client recieves
         an event.
 
@@ -66,6 +68,9 @@ class ListenerClientMixin:
         Returns:
             The listener created.
         """
+        if listener_type == ListenerType.STATE:
+            raise ValueError("Client listeners cannot have STATE"
+                             " as listener_type")
         listener = Listener(
             callback=callback,
             client=self,
@@ -75,8 +80,20 @@ class ListenerClientMixin:
         self.listeners[listener_type].add(listener)
         return listener
 
-    def add_room_listener(self, callback, room_id, event_type=None,
-                          listener_type=ListenerType.GLOBAL):
+    def add_room_listener(
+            self, callback, room_id,
+            event_type=None, listener_type=ListenerType.GLOBAL
+    ) -> Listener:
+        if listener_type not in {
+            ListenerType.GLOBAL,
+            ListenerType.STATE,
+            ListenerType.EPHEMERAL
+        }:
+            raise ValueError(
+                "Room listener must have listener_type of "
+                "GLOBAL, STATE, or EPHEMERAL"
+            )
+
         listener = Listener(
             callback=callback,
             room_id=room_id,

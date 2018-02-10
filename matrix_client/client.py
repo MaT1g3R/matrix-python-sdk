@@ -19,7 +19,7 @@ from asyncio import Queue, ensure_future, get_event_loop, sleep
 from .api import MatrixHttpApi
 from .enums import CACHE, ListenerType
 from .errors import MatrixRequestError, MatrixUnexpectedResponse
-from .event import Presence, InvitedRoom, InviteState, Event, LeftRoom, \
+from .event import InvitedRoom, InviteState, Event, LeftRoom, \
     Timeline, JoinedRoom
 from .listener import ListenerClientMixin
 from .room import Room
@@ -354,40 +354,35 @@ class MatrixBaseClient(object):
         return self.rooms[room_id]
 
     def _process_state_event(self, state_event, current_room):
-        if "type" not in state_event:
-            return  # Ignore event
-        etype = state_event["type"]
-
+        etype = state_event.type
+        if not etype:
+            return  # ignore event
+        econtent = state_event.content
         # Don't keep track of room state if caching turned off
         if self._cache_level != CACHE.NONE:
             if etype == "m.room.name":
-                current_room.name = state_event["content"].get("name", None)
+                current_room.name = econtent.get("name")
             elif etype == "m.room.canonical_alias":
-                current_room.canonical_alias = state_event["content"].get(
-                    "alias")
+                current_room.canonical_alias = econtent.get("alias")
             elif etype == "m.room.topic":
-                current_room.topic = state_event["content"].get("topic", None)
+                current_room.topic = econtent.get("topic")
+
             elif etype == "m.room.aliases":
-                current_room.aliases = state_event["content"].get("aliases",
-                                                                  None)
+                current_room.aliases = econtent.get("aliases")
+
             elif etype == "m.room.member" and self._cache_level == CACHE.ALL:
                 # tracking room members can be large e.g. #matrix:matrix.org
-                if state_event["content"]["membership"] == "join":
-                    current_room._mkmembers(
-                        User(self.api,
-                             state_event["state_key"],
-                             state_event["content"].get("displayname", None))
-                    )
-                elif state_event["content"]["membership"] in (
-                        "leave", "kick", "invite"):
-                    current_room._rmmembers(state_event["state_key"])
+                if econtent["membership"] == "join":
+                    current_room._mkmembers(User(
+                        self.api,
+                        state_event.state_key,
+                        econtent.get("displayname")
+                    ))
+                elif econtent["membership"] \
+                        in {"leave", "kick", "invite"}:
+                    current_room._rmmembers(state_event.state_key)
 
-        for listener in current_room.state_listeners:
-            if (
-                    listener.event_type is None or
-                    listener.event_type == state_event['type']
-            ):
-                self.create_task(listener(state_event))
+        self.room_event_queue.put_nowait((state_event, current_room))
 
     async def sync(self, timeout_ms=30000):
         # TODO: Deal with left rooms
@@ -396,7 +391,10 @@ class MatrixBaseClient(object):
         self.sync_token = response["next_batch"]
 
         for presence_update in response['presence']['events']:
-            self.event_queue.put_nowait(Presence(**presence_update))
+            self.event_queue.put_nowait(Event(
+                **presence_update,
+                listener_type=ListenerType.PRESENCE
+            ))
 
         for room_id, invite_room in response['rooms']['invite'].items():
             invite_states = [
@@ -432,16 +430,17 @@ class MatrixBaseClient(object):
             room.prev_batch = joined_room.timeline.prev_batch
 
             for event in joined_room.state:
+                event.listener_type = ListenerType.STATE
                 self._process_state_event(event, room)
 
             for event in joined_room.timeline.events:
                 event.listener_type = ListenerType.GLOBAL
-                room._put_event(event)
+                self.room_event_queue.put_nowait((event, room))
                 self.event_queue.put_nowait(event)
 
             for event in joined_room.ephemeral:
                 event.listener_type = ListenerType.EPHEMERAL
-                room._put_ephemeral_event(event)
+                self.room_event_queue.put_nowait((event, room))
                 self.event_queue.put_nowait(event)
 
     def get_user(self, user_id):
