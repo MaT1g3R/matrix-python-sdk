@@ -7,13 +7,14 @@ import attr
 from .enums import ListenerType
 
 
-@attr.s(frozen=True)
+@attr.s(frozen=True, slots=True)
 class Listener:
     callback = attr.ib()
     client = attr.ib()
     uuid = attr.ib(default=uuid4(), init=False)
     listener_type = attr.ib(type=ListenerType)
     event_type = attr.ib(default=None)
+    room_id = attr.ib(default=None)
 
     @callback.validator
     def is_coro(self, attribute, value):
@@ -24,7 +25,7 @@ class Listener:
         return self.uuid == other.uuid
 
     def __hash__(self):
-        return self.uuid.__hash__()
+        return hash(self.uuid)
 
     async def __call__(self, *args, **kwargs):
         try:
@@ -38,6 +39,7 @@ class Listener:
 class ListenerClientMixin:
     def __init__(self, *args, **kwargs):
         self.listeners = defaultdict(set)
+        self.room_listeners = defaultdict(lambda: defaultdict(set))
         super().__init__(*args, **kwargs)
 
     async def on_listener_error(self, e):
@@ -71,19 +73,36 @@ class ListenerClientMixin:
         self.listeners[listener_type].add(listener)
         return listener
 
-    def remove_listener(self, uid, listener_type=ListenerType.GLOBAL):
-        """ Remove listener with given uid.
+    def add_room_listener(self, callback, room_id, event_type=None,
+                          listener_type=ListenerType.GLOBAL):
+        listener = Listener(
+            callback=callback,
+            room_id=room_id,
+            client=self,
+            listener_type=listener_type,
+            event_type=event_type
+        )
+        self.room_listeners[room_id][listener_type].add(listener)
+        return listener
+
+    def remove_listener(self, listener):
+        """
+        Remove listener.
 
         Args:
-            uuid.UUID: Unique id of the listener to remove.
-            listener_type (ListenerType); The type of the listener to
-                remove. Default is GLOBAL.
+            listener: The listener to remove
         """
-        self.listeners[listener_type] = {
-            lis for lis in
-            self.listeners[listener_type] if
-            lis.uuid != uid
-        }
+        self.listeners[listener.listener_type].remove(listener)
+
+    def remove_room_listener(self, listener):
+        """ Remove room listener.
+        Args:
+            listener: The listener to remove
+        """
+        if not listener.room_id:
+            raise ValueError('Listener must have a room id')
+        self.room_listeners[listener.room_id][listener.listener_type] \
+            .remove(listener)
 
     def start_listener(self, timeout_ms=30000):
         """ Start a listener thread to listen for events in the background.
