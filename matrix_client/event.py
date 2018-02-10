@@ -28,7 +28,7 @@ class UnsignedData:
     transaction_id: MaybeStr = None
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(slots=True)
 class Event:
     __weakref__: Any = weakref_attrib
     content: MaybeDict = None
@@ -90,6 +90,9 @@ class Presence:
     presence: str
     currently_active: MaybeBool = None
     user_id: str
+    listener_type: ListenerType = attrib(
+        default=ListenerType.PRESENCE, init=False
+    )
 
 
 @dataclass(slots=True, forzen=True)
@@ -106,6 +109,9 @@ class InvitedRoom:
     __weakref__: Any = weakref_attrib
     room_id: str
     invite_states: List[InviteState] = []
+    listener_type: ListenerType = attrib(
+        default=ListenerType.INVITE, init=False
+    )
 
 
 @dataclass(slots=True, forzen=True)
@@ -133,6 +139,9 @@ class LeftRoom:
     room_id: str
     left_states: List[Event] = []
     timeline: Optional[Timeline] = None
+    listener_type: ListenerType = attrib(
+        default=ListenerType.LEAVE, init=False
+    )
 
 
 @dataclass(slots=True, forzen=True)
@@ -157,13 +166,7 @@ class JoinedRoom:
         highlight_count = unread.get('highlight_count')
         notification_count = unread.get('notification_count')
         state_objs = [Event.from_dict(s) for s in state]
-
-        ephemeral_objs = []
-        for e in ephemeral:
-            e = e.copy()
-            e.update(listener_type=ListenerType.EPHEMERAL)
-            ephemeral_objs.append(Event.from_dict(e))
-
+        ephemeral_objs = [Event.from_dict(e) for e in ephemeral]
         acc_objs = [Event.from_dict(a) for a in account_data]
         timeline_obj = Timeline.from_dict(timeline) if timeline else None
 

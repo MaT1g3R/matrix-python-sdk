@@ -1,3 +1,4 @@
+from asyncio import sleep
 from collections import defaultdict
 from inspect import iscoroutinefunction
 from uuid import uuid4
@@ -5,7 +6,6 @@ from uuid import uuid4
 import attr
 
 from .enums import ListenerType
-from .event import Presence, Event, InvitedRoom, LeftRoom
 
 
 @attr.s(frozen=True)
@@ -41,26 +41,6 @@ class ListenerClientMixin:
         self.listeners = defaultdict(set)
         super().__init__(*args, **kwargs)
 
-    @property
-    def global_listeners(self):
-        return self.listeners[ListenerType.GLOBAL]
-
-    @property
-    def presence_listeners(self):
-        return self.listeners[ListenerType.PRESENCE]
-
-    @property
-    def invite_listeners(self):
-        return self.listeners[ListenerType.INVITE]
-
-    @property
-    def left_listeners(self):
-        return self.listeners[ListenerType.LEAVE]
-
-    @property
-    def ephemeral_listeners(self):
-        return self.listeners[ListenerType.EPHEMERAL]
-
     async def on_listener_error(self, e):
         """
         Default listener exception handler. This is expected to be
@@ -76,11 +56,10 @@ class ListenerClientMixin:
         an event.
 
         Args:
-            callback (func(roomchunk)): Callback called when an event arrives.
+            callback (coro(event)):  Callback called when an event arrives.
             event_type (str): The event_type to filter for.
             listener_type (ListenerType): The type of the listener.
-                                          Defualts to all types.
-
+                                          Defualts to global.
         Returns:
             The listener created.
         """
@@ -107,100 +86,6 @@ class ListenerClientMixin:
             lis.uuid != uid
         }
 
-    def add_global_listener(self, callback, event_type=None) -> Listener:
-        """
-        Add a global listner that will send a callback on all events.
-        Args:
-            callback: The call back coroutine.
-            event_type: The event type to filter for.
-
-        Returns:
-            The listener created.
-
-        """
-        return self.add_listener(
-            callback,
-            event_type=event_type,
-            listener_type=ListenerType.GLOBAL
-        )
-
-    def remove_global_listener(self, uid):
-        """
-        Remove global listener with give uid.
-        Args:
-            uid (uuid.UUID): Unique id of the listener to remove.
-        """
-        self.remove_listener(uid, ListenerType.GLOBAL)
-
-    def add_presence_listener(self, callback) -> Listener:
-        """ Add a presence listener that will send a callback when the client receives
-        a presence update.
-
-        Args:
-            callback (func(roomchunk)): Callback called when a presence update arrives.
-
-        Returns:
-            The listener created.
-        """
-        return self.add_listener(callback, listener_type=ListenerType.PRESENCE)
-
-    def remove_presence_listener(self, uid):
-        """ Remove presence listener with given uid
-
-        Args:
-            uuid.UUID: Unique id of the listener to remove
-        """
-        self.remove_listener(uid, ListenerType.PRESENCE)
-
-    def add_ephemeral_listener(self, callback, event_type=None) -> Listener:
-        """ Add an ephemeral listener that will send a callback when the client recieves
-        an ephemeral event.
-
-        Args:
-            callback (func(roomchunk)): Callback called when an ephemeral event arrives.
-            event_type (str): The event_type to filter for.
-
-        Returns:
-            The listener created.
-        """
-        return self.add_listener(
-            callback,
-            listener_type=ListenerType.EPHEMERAL,
-            event_type=event_type
-        )
-
-    def remove_ephemeral_listener(self, uid):
-        """ Remove ephemeral listener with given uid.
-
-        Args:
-            uuid.UUID: Unique id of the listener to remove.
-        """
-        self.remove_listener(uid, ListenerType.EPHEMERAL)
-
-    def add_invite_listener(self, callback) -> Listener:
-        """ Add a listener that will send a callback when the client receives
-        an invite.
-
-        Args:
-            callback (func(room_id, state)): Callback called when an invite arrives.
-
-        Returns:
-            The listener created.
-        """
-        return self.add_listener(callback, listener_type=ListenerType.INVITE)
-
-    def add_leave_listener(self, callback) -> Listener:
-        """ Add a listener that will send a callback when the client has left a room.
-
-        Args:
-            callback (func(room_id, room)): Callback called when the client
-            has left a room.
-
-        Returns:
-            The listener created.
-        """
-        return self.add_listener(callback, listener_type=ListenerType.LEAVE)
-
     def start_listener(self, timeout_ms=30000):
         """ Start a listener thread to listen for events in the background.
 
@@ -211,30 +96,21 @@ class ListenerClientMixin:
         self.create_task(self.consume_events())
         return super().start_listener(timeout_ms)
 
+    async def dispatch_event(self, event):
+        for listener in self.listeners[event.listener_type]:
+            if not listener.event_type:
+                self.create_task(listener(event))
+            else:
+                try:
+                    event_type = event.type
+                except AttributeError:
+                    pass
+                else:
+                    if listener.event_type == event_type:
+                        self.create_task(listener(event))
+            await sleep(0)
+
     async def consume_events(self):
         while self.should_listen:
             event = await self.event_queue.get()
-            if isinstance(event, Event) \
-                    and event.listener_type == ListenerType.EPHEMERAL:
-                for listener in self.ephemeral_listeners:
-                    if (
-                            listener.event_type is None or
-                            listener.event_type == event.type
-                    ):
-                        self.create_task(listener(event))
-            elif isinstance(event, Event):
-                for listener in self.global_listeners:
-                    if (
-                            listener.event_type is None or
-                            listener.event_type == event.type
-                    ):
-                        self.create_task(listener(event))
-            elif isinstance(event, Presence):
-                for listener in self.presence_listeners:
-                    self.create_task(listener(event))
-            elif isinstance(event, InvitedRoom):
-                for listener in self.invite_listeners:
-                    self.create_task(listener(event))
-            elif isinstance(event, LeftRoom):
-                for listener in self.left_listeners:
-                    self.create_task(listener(event))
+            await self.dispatch_event(event)

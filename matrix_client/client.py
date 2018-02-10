@@ -17,7 +17,7 @@ import logging
 from asyncio import Queue, ensure_future, get_event_loop, sleep
 
 from .api import MatrixHttpApi
-from .enums import CACHE
+from .enums import CACHE, ListenerType
 from .errors import MatrixRequestError, MatrixUnexpectedResponse
 from .event import Presence, InvitedRoom, InviteState, Event, LeftRoom, \
     Timeline, JoinedRoom
@@ -434,9 +434,11 @@ class MatrixBaseClient(object):
 
             for event in joined_room.timeline.events:
                 room._put_event(event)
+                event.listener_type = ListenerType.GLOBAL
                 self.event_queue.put_nowait(event)
 
             for event in joined_room.ephemeral:
+                event.listener_type = ListenerType.EPHEMERAL
                 room._put_ephemeral_event(event)
                 self.event_queue.put_nowait(event)
 
