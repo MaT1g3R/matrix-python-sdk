@@ -123,7 +123,7 @@ class ListenerClientMixin:
         self.room_listeners[listener.room_id][listener.listener_type] \
             .remove(listener)
 
-    def start_listener(self, timeout_ms=30000):
+    def start_client(self, timeout_ms=30000):
         """
         Start the client to listen for events. Also start
         the event consumers to dispatch events to listeners.
@@ -134,7 +134,7 @@ class ListenerClientMixin:
         """
         self.create_task(self._consume_events())
         self.create_task(self._consume_room_events())
-        return super().start_listener(timeout_ms)
+        return super().start_client(timeout_ms)
 
     def _help_dispatch(self, listener, event, room):
         if room:
