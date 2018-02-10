@@ -25,22 +25,23 @@ from matrix_client.client import MatrixListenerClient
 
 
 # Called when a message is recieved.
-async def on_message(room, event):
-    if event['type'] == "m.room.member":
-        if event['membership'] == "join":
-            print("{0} joined".format(event['content']['displayname']))
-    elif event['type'] == "m.room.message":
-        if event['content']['msgtype'] == "m.text":
-            print("{0}: {1}".format(event['sender'], event['content']['body']))
+async def on_message(event, room):
+    if event.type == "m.room.member":
+        if event.membership == "join":
+            print("{0} joined".format(event.content['displayname']))
+    elif event.type == "m.room.message":
+        if event.content['msgtype'] == "m.text":
+            print("{0}: {1}".format(event.sender, event.content['body']))
     else:
-        print(event['type'])
+        print(event.type)
 
 
 async def get_input(room, loop):
     while True:
         msg = await loop.run_in_executor(None, samples_common.get_input)
         if msg == "/quit":
-            break
+            await room.client.logout()
+            room.client.stop_client()
         else:
             await room.send_text(msg)
 
@@ -69,9 +70,9 @@ async def main(loop, host, username, password, room_id_alias):
             print("Couldn't find room.")
             sys.exit(12)
 
-    room.add_listener(on_message)
+    client.add_room_listener(on_message, room_id=room.room_id)
     client.create_task(get_input(room, loop))
-    client.start_listener()
+    client.start_client()
 
 
 if __name__ == '__main__':
@@ -82,7 +83,6 @@ if __name__ == '__main__':
         room_id_alias = sys.argv[4]
     else:
         room_id_alias = samples_common.get_input("Room ID/Alias: ")
-
     loop = get_event_loop()
     ensure_future(
         main(loop, host, username, password, room_id_alias),
