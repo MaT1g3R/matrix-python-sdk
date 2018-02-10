@@ -39,6 +39,8 @@ class Listener:
 class ListenerClientMixin:
     def __init__(self, *args, **kwargs):
         self.listeners = defaultdict(set)
+
+        # {room_id: {listener_type: set of listeners}}
         self.room_listeners = defaultdict(lambda: defaultdict(set))
         super().__init__(*args, **kwargs)
 
@@ -105,29 +107,47 @@ class ListenerClientMixin:
             .remove(listener)
 
     def start_listener(self, timeout_ms=30000):
-        """ Start a listener thread to listen for events in the background.
+        """
+        Start the client to listen for events. Also start
+        the event consumers to dispatch events to listeners.
 
         Args:
             timeout_ms(int): How long to poll the Home Server for before
-               retrying.
+                             retrying.
         """
-        self.create_task(self.consume_events())
+        self.create_task(self._consume_events())
+        self.create_task(self._consume_room_events())
         return super().start_listener(timeout_ms)
 
-    def dispatch_event(self, event):
-        for listener in self.listeners[event.listener_type]:
-            if not listener.event_type:
-                self.create_task(listener(event))
-            else:
-                try:
-                    event_type = event.type
-                except AttributeError:
-                    pass
-                else:
-                    if listener.event_type == event_type:
-                        self.create_task(listener(event))
+    def _help_dispatch(self, listener, event, room):
+        if room:
+            self.create_task(listener(event, room))
+        else:
+            self.create_task(listener(event))
 
-    async def consume_events(self):
+    def _dispatch(self, listener, event, room=None):
+        if not listener.event_type:
+            self._help_dispatch(listener, event, room)
+        else:
+            try:
+                event_type = event.type
+            except AttributeError:
+                pass
+            else:
+                if listener.event_type == event_type:
+                    self._help_dispatch(listener, event, room)
+
+    async def _consume_events(self):
         while self.should_listen:
             event = await self.event_queue.get()
-            self.dispatch_event(event)
+            for listener in self.listeners[event.listener_type]:
+                self._dispatch(listener, event)
+
+    async def _consume_room_events(self):
+        while self.should_listen:
+            event, room = await self.room_event_queue.get()
+            for listener in (
+                    self.room_listeners
+                    [room.room_id][event.listener_type]
+            ):
+                self._dispatch(listener, event, room)

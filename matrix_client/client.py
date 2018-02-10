@@ -113,6 +113,7 @@ class MatrixBaseClient(object):
         self.api = MatrixHttpApi(base_url, token, loop=loop)
         self.api.validate_certificate(valid_cert_check)
         self.event_queue = Queue(loop=self.loop)
+        self.room_event_queue = Queue(loop=self.loop)
         if isinstance(cache_level, CACHE):
             self._cache_level = cache_level
         else:
@@ -142,6 +143,7 @@ class MatrixBaseClient(object):
     async def on_exception(self, e):
         """
         Default exception handling for exceptions during sync.
+        This is expected to be overwritten in a subclass.
         Args:
             e: The exception raised.
         """
@@ -300,8 +302,9 @@ class MatrixBaseClient(object):
             except Exception as e:
                 self.create_task(self.on_exception(e))
 
-    def start_listener(self, timeout_ms=30000):
-        """ Start a listener thread to listen for events in the background.
+    def start_client(self, timeout_ms=30000):
+        """
+        Start the client to listen for events.
 
         Args:
             timeout_ms(int): How long to poll the Home Server for before
@@ -314,9 +317,8 @@ class MatrixBaseClient(object):
         self.should_listen = True
         return task
 
-    def stop_listener(self):
-        """ Stop listener thread running in the background
-        """
+    def stop_client(self):
+        """ Stop the client from listening event."""
         if self.sync_task:
             self.should_listen = False
             self.sync_task = None
@@ -433,8 +435,8 @@ class MatrixBaseClient(object):
                 self._process_state_event(event, room)
 
             for event in joined_room.timeline.events:
-                room._put_event(event)
                 event.listener_type = ListenerType.GLOBAL
+                room._put_event(event)
                 self.event_queue.put_nowait(event)
 
             for event in joined_room.ephemeral:
@@ -469,8 +471,8 @@ class MatrixBaseClient(object):
         except MatrixRequestError:
             return False
 
-    def create_task(self, coro):
-        return ensure_future(coro, loop=self.loop)
+    def create_task(self, coro_or_future):
+        return ensure_future(coro_or_future, loop=self.loop)
 
 
 class MatrixListenerClient(ListenerClientMixin, MatrixBaseClient):
