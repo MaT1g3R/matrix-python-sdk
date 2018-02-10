@@ -8,7 +8,8 @@ from responses import RequestsMock
 
 from matrix_client.api import MATRIX_V2_API_PATH
 from matrix_client.client import Room, User
-from matrix_client.enums import CACHE
+from matrix_client.enums import CACHE, ListenerType
+from matrix_client.event import Event
 from matrix_client.listener import ListenerClientMixin
 from . import response_examples
 from .mock_client import MockBaseClient
@@ -75,11 +76,9 @@ async def test_bad_state_events():
     client = MatrixClient("http://example.com")
     room = client._mkroom("!abc:matrix.org")
 
-    ev = {
-        "tomato": False
-    }
-
-    client._process_state_event(ev, room)
+    with pytest.raises(TypeError):
+        ev = Event.from_dict({"tomato": False})
+        client._process_state_event(ev, room)
 
 
 async def test_state_event():
@@ -90,44 +89,44 @@ async def test_state_event():
     room.topic = False
     room.aliases = False
 
-    ev = {
+    ev = Event.from_dict({
         "type": "m.room.name",
         "content": {}
-    }
+    })
 
     client._process_state_event(ev, room)
     assert room.name is None
 
-    ev["content"]["name"] = "TestName"
+    ev.content["name"] = "TestName"
     client._process_state_event(ev, room)
     assert room.name is "TestName"
 
-    ev["type"] = "m.room.topic"
+    ev.type = "m.room.topic"
     client._process_state_event(ev, room)
     assert room.topic is None
 
-    ev["content"]["topic"] = "TestTopic"
+    ev.content["topic"] = "TestTopic"
     client._process_state_event(ev, room)
     assert room.topic is "TestTopic"
 
-    ev["type"] = "m.room.aliases"
+    ev.type = "m.room.aliases"
     client._process_state_event(ev, room)
     assert room.aliases is None
 
     aliases = ["#foo:matrix.org", "#bar:matrix.org"]
-    ev["content"]["aliases"] = aliases
+    ev.content["aliases"] = aliases
     client._process_state_event(ev, room)
     assert room.aliases is aliases
 
     # test member join event
-    ev["type"] = "m.room.member"
-    ev["content"] = {'membership': 'join', 'displayname': 'stereo'}
-    ev["state_key"] = "@stereo:xxx.org"
+    ev.type = "m.room.member"
+    ev.content = {'membership': 'join', 'displayname': 'stereo'}
+    ev.state_key = "@stereo:xxx.org"
     client._process_state_event(ev, room)
     assert len(room._members) == 1
     assert room._members[0].user_id == "@stereo:xxx.org"
     # test member leave event
-    ev["content"]['membership'] = 'leave'
+    ev.content['membership'] = 'leave'
     client._process_state_event(ev, room)
     assert len(room._members) == 0
 
@@ -157,23 +156,13 @@ async def test_remove_listener():
         pass
 
     client = MatrixClient("http://example.com")
-    handler = client.add_global_listener(dummy_listener).uuid
+    handler = client.add_listener(dummy_listener)
 
-    found_listener = False
-    for listener in client.global_listeners:
-        if listener.uuid == handler:
-            found_listener = True
-            break
-
+    found_listener = handler in client.listeners[ListenerType.GLOBAL]
     assert found_listener, "listener was not added properly"
 
     client.remove_listener(handler)
-    found_listener = False
-    for listener in client.global_listeners:
-        if listener.uuid == handler:
-            found_listener = True
-            break
-
+    found_listener = handler in client.listeners[ListenerType.GLOBAL]
     assert not found_listener, "listener was not removed properly"
 
 
@@ -276,10 +265,11 @@ async def test_presence_listener():
 
     with RequestsMock() as r:
         r.add(responses.GET, sync_url, body=response_body)
-        callback_uid = client.add_presence_listener(dummy_callback).uuid
+        listener = client.add_listener(
+            dummy_callback, listener_type=ListenerType.PRESENCE)
         await client.sync()
     client.should_listen = True
-    task = client.create_task(client.consume_events())
+    task = client.create_task(client._consume_events())
     pending = [t for t in asyncio.Task.all_tasks() if
                t._coro.__name__ == "__call__"]
     try:
@@ -287,16 +277,19 @@ async def test_presence_listener():
     except asyncio.TimeoutError:
         pass
     await asyncio.gather(*pending)
+    presence_events = [Event.from_dict(e) for e in presence_events]
+    for e in presence_events:
+        e.listener_type = ListenerType.PRESENCE
     assert accumulator == presence_events
 
     with RequestsMock() as r:
         r.add(responses.GET, sync_url, body=response_body)
-        client.remove_presence_listener(callback_uid)
+        client.remove_listener(listener)
         accumulator = []
         await client.sync()
     pending = [t for t in asyncio.Task.all_tasks() if
                t._coro.__name__ == "__call__"]
-    task = client.create_task(client.consume_events())
+    task = client.create_task(client._consume_events())
     try:
         await asyncio.wait_for(task, timeout=1)
     except asyncio.TimeoutError:
