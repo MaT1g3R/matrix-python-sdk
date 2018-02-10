@@ -326,7 +326,7 @@ class Room(object):
                     event['type']:
                 self.client.loop.create_task(listener['callback'](self, event))
 
-    def invite_user(self, user_id):
+    async def invite_user(self, user_id):
         """ Invite a user to this room
 
         Args:
@@ -336,7 +336,7 @@ class Room(object):
             boolean: The invitation was sent.
         """
         try:
-            self.client.api.invite_user(self.room_id, user_id)
+            await self.client.api.invite_user(self.room_id, user_id)
             return True
         except MatrixRequestError:
             return False
