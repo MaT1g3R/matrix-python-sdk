@@ -16,22 +16,27 @@ Error Codes:
 """
 
 import argparse
+import asyncio
+import sys
+
+sys.path.append('../')
+
+from matrix_client.api import MatrixRequestError, MatrixHttpLibError
 from matrix_client.client import MatrixBaseClient
-from matrix_client.api import MatrixRequestError
-from requests.exceptions import MissingSchema, InvalidSchema
 
 
-def example(host, user, password, token):
+async def example(host, user, password, token, loop):
     """run the example."""
     client = None
     try:
         if token:
             print('token login')
             client = MatrixBaseClient(host, token=token, user_id=user)
+            await client.sync()
         else:
             print('password login')
             client = MatrixBaseClient(host)
-            token = client.login_with_password(user, password)
+            token = await client.login_with_password(user, password)
             print('got token: %s' % token)
     except MatrixRequestError as e:
         print(e)
@@ -44,16 +49,11 @@ def example(host, user, password, token):
         else:
             print("Verify server details.")
             exit(4)
-    except MissingSchema as e:
+    except MatrixHttpLibError as e:
         print(e)
-        print("Bad formatting of URL.")
         exit(5)
-    except InvalidSchema as e:
-        print(e)
-        print("Invalid URL schema")
-        exit(6)
     print("is in rooms")
-    for room_id, room in client.get_rooms().items():
+    for room_id, room in client.rooms.items():
         print(room_id)
 
 
@@ -68,7 +68,10 @@ def main():
     if not args.password and not args.token:
         print('password or token is required')
         exit(1)
-    example(args.host, args.user, args.password, args.token)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(
+        example(args.host, args.user, args.password, args.token, loop)
+    )
 
 
 if __name__ == "__main__":
