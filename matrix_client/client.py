@@ -297,7 +297,7 @@ class MatrixBaseClient(object):
                     bad_sync_timeout = min(bad_sync_timeout * 2,
                                            self.bad_sync_timeout_limit)
                 else:
-                    raise e
+                    self.create_task(self.on_exception(e))
             except Exception as e:
                 self.create_task(self.on_exception(e))
 
