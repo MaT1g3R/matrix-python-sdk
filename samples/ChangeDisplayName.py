@@ -8,44 +8,54 @@
 # 4 - Bad username/password.
 # 11 - Serverside Error
 
+import asyncio
 import sys
-import samples_common
 
-from matrix_client.client import MatrixBaseClient
-from matrix_client.api import MatrixRequestError
+sys.path.append('../')
+
+import samples_common
 from requests.exceptions import MissingSchema
 
+from matrix_client.api import MatrixRequestError
+from matrix_client.client import MatrixBaseClient
 
 host, username, password = samples_common.get_user_details(sys.argv)
 
 client = MatrixBaseClient(host)
 
-try:
-    client.login_with_password(username, password)
-except MatrixRequestError as e:
-    print(e)
-    if e.code == 403:
-        print("Bad username or password.")
-        sys.exit(4)
+
+async def main():
+    try:
+        await client.login_with_password(username, password)
+    except MatrixRequestError as e:
+        print(e)
+        if e.code == 403:
+            print("Bad username or password.")
+            sys.exit(4)
+        else:
+            print("Check your server details are correct.")
+            sys.exit(2)
+    except MissingSchema as e:
+        print("Bad URL format.")
+        print(e)
+        sys.exit(3)
+
+    user = client.get_user(client.user_id)
+
+    if len(sys.argv) < 5:
+        print("Current Display Name: %s" % await user.get_display_name())
+
+        displayname = input("New Display Name: ")
     else:
-        print("Check your server details are correct.")
-        sys.exit(2)
-except MissingSchema as e:
-    print("Bad URL format.")
-    print(e)
-    sys.exit(3)
+        displayname = sys.argv[4]
 
-user = client.get_user(client.user_id)
+    try:
+        await user.set_display_name(displayname)
+    except MatrixRequestError as e:
+        print(e)
+        sys.exit(11)
 
-if len(sys.argv) < 5:
-    print("Current Display Name: %s" % user.get_display_name())
 
-    displayname = input("New Display Name: ")
-else:
-    displayname = sys.argv[4]
-
-try:
-    user.set_display_name(displayname)
-except MatrixRequestError as e:
-    print(e)
-    sys.exit(11)
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
