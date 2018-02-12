@@ -8,46 +8,54 @@
 # 4 - Bad username/password.
 # 11 - Serverside Error
 
+import asyncio
 import sys
+
+sys.path.append('../')
+
 import samples_common
 
 from matrix_client.client import MatrixBaseClient
-from matrix_client.api import MatrixRequestError
-from requests.exceptions import MissingSchema
-
+from matrix_client.api import MatrixRequestError, MatrixHttpLibError
 
 host, username, password = samples_common.get_user_details(sys.argv)
 
 client = MatrixBaseClient(host)
 
-try:
-    client.login_with_password_no_sync(username, password)
-except MatrixRequestError as e:
-    print(e)
-    if e.code == 403:
-        print("Bad username or password.")
-        sys.exit(4)
-    else:
-        print("Check your server details are correct.")
-        sys.exit(2)
-except MissingSchema as e:
-    print("Bad URL format.")
-    print(e)
-    sys.exit(3)
 
-room = client.join_room(input("Room:"))
-displayname = input("Displayname:")
-if len(displayname) == 0:
-    print("Not setting displayname")
-    displayname = None
+async def main():
+    try:
+        await client.login_with_password_no_sync(username, password)
+    except MatrixRequestError as e:
+        print(e)
+        if e.code == 403:
+            print("Bad username or password.")
+            sys.exit(4)
+        else:
+            print("Check your server details are correct.")
+            sys.exit(2)
+    except MatrixHttpLibError as e:
+        print(e)
+        sys.exit(3)
 
-avatar = input("Avatar:")
-if len(avatar) == 0:
-    print("Not setting avatar")
-    avatar = None
+    room = await client.join_room(input("Room:"))
+    displayname = input("Displayname:")
+    if len(displayname) == 0:
+        print("Not setting displayname")
+        displayname = None
 
-try:
-    room.set_user_profile(displayname, avatar)
-except MatrixRequestError as e:
-    print(e)
-    sys.exit(11)
+    avatar = input("Avatar:")
+    if len(avatar) == 0:
+        print("Not setting avatar")
+        avatar = None
+
+    try:
+        await room.set_user_profile(displayname, avatar)
+    except MatrixRequestError as e:
+        print(e)
+        sys.exit(11)
+
+
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
