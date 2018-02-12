@@ -28,6 +28,8 @@ class UnsignedData:
     replaces_state: MaybeStr = None
     age: MaybeInt = None
     redacted_because: Optional["Event"] = None
+    redacted_by: MaybeStr = None
+    redacts: MaybeStr = None
     transaction_id: MaybeStr = None
 
 
@@ -45,6 +47,7 @@ class Event:
     room_id: str = None
     sender: str = None
     origin_server_ts: int = None
+    redacts: MaybeStr = None
     unsigned: Optional[UnsignedData] = None
     listener_type: Optional[ListenerType] = ListenerType.GLOBAL
 
