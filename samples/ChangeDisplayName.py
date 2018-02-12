@@ -14,7 +14,7 @@ import sys
 sys.path.append('../')
 
 import samples_common
-from requests.exceptions import MissingSchema
+from aiohttp import InvalidURL
 
 from matrix_client.api import MatrixRequestError
 from matrix_client.client import MatrixBaseClient
@@ -35,7 +35,7 @@ async def main():
         else:
             print("Check your server details are correct.")
             sys.exit(2)
-    except MissingSchema as e:
+    except InvalidURL as e:
         print("Bad URL format.")
         print(e)
         sys.exit(3)
