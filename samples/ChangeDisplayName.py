@@ -14,9 +14,8 @@ import sys
 sys.path.append('../')
 
 import samples_common
-from aiohttp import InvalidURL
 
-from matrix_client.api import MatrixRequestError
+from matrix_client.api import MatrixRequestError, MatrixHttpLibError
 from matrix_client.client import MatrixBaseClient
 
 host, username, password = samples_common.get_user_details(sys.argv)
@@ -35,8 +34,7 @@ async def main():
         else:
             print("Check your server details are correct.")
             sys.exit(2)
-    except InvalidURL as e:
-        print("Bad URL format.")
+    except MatrixHttpLibError as e:
         print(e)
         sys.exit(3)
 
