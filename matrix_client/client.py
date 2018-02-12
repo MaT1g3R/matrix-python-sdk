@@ -137,8 +137,6 @@ class MatrixBaseClient(object):
         self.token = token
         self.user_id = user_id
         self.logger = logger
-        if self.token:
-            self.create_task(self.sync())
 
     async def on_exception(self, e):
         """
