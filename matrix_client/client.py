@@ -14,13 +14,12 @@
 # limitations under the License.
 
 import logging
-from asyncio import Queue, ensure_future, get_event_loop, sleep
+from asyncio import Queue, ensure_future, get_event_loop, sleep, Future
 
 from .api import MatrixHttpApi
 from .enums import CACHE, ListenerType
 from .errors import MatrixRequestError, MatrixUnexpectedResponse
-from .event import InvitedRoom, Event, LeftRoom, \
-    Timeline, JoinedRoom
+from .event import InvitedRoom, Event, LeftRoom, Timeline, JoinedRoom
 from .listener import ListenerClientMixin
 from .room import Room
 from .user import User
@@ -33,15 +32,17 @@ class MatrixBaseClient(object):
     The client API for Matrix. For the raw HTTP calls, see MatrixHttpApi.
 
     Args:
-        base_url (str): The url of the HS preceding /_matrix.
-            e.g. (ex: https://localhost:8008 )
-        token (Optional[str]): If you have an access token
-            supply it here.
-        user_id (Optional[str]): You must supply the user_id
-            (as obtained when initially logging in to obtain
-            the token) if supplying a token; otherwise, ignored.
-        valid_cert_check (bool): Check the homeservers
-            certificate on connections?
+        base_url (str):
+            The url of the HS preceding /_matrix.
+            e.g. (ex: https://matrix.org)
+        token (Optional[str]):
+            If you have an access token supply it here.
+        user_id (Optional[str]):
+            You must supply the user_id
+            (as obtained when initially logging in to obtain the token)
+            if supplying a token; otherwise, ignored.
+        valid_cert_check (bool):
+            Check the homeservers certificate on connections?
 
     Returns:
         `MatrixBaseClient`
@@ -53,54 +54,38 @@ class MatrixBaseClient(object):
 
         Create a new user and send a message::
 
-            client = MatrixClient("https://matrix.org")
-            token = client.register_with_password(username="foobar",
-                password="monkey")
-            room = client.create_room("myroom")
-            room.send_image(file_like_object)
-
-        Send a message with an already logged in user::
-
-            client = MatrixClient("https://matrix.org", token="foobar",
-                user_id="@foobar:matrix.org")
-            rooms = client.get_rooms()  # NB: From initial sync
-            client.add_listener(func)  # NB: event stream callback
-            rooms[0].add_listener(func)  # NB: callbacks just for this room.
-            room = client.join_room("#matrix:matrix.org")
-            response = room.send_text("Hello!")
-            response = room.kick("@bob:matrix.org")
-
-        Incoming event callbacks (scopes)::
-
-            def user_callback(user, incoming_event):
-                pass
-
-            def room_callback(room, incoming_event):
-                pass
-
-            def global_callback(incoming_event):
-                pass
+            async def main():
+                client = MatrixClient("https://matrix.org")
+                token = await client.register_with_password(
+                            username="foobar", password="monkey"
+                        )
+                room = await client.create_room("myroom")
+                await room.send_image(file_like_object)
     """
 
     def __init__(self, base_url, token=None, user_id=None,
                  valid_cert_check=True, sync_filter_limit=20,
                  cache_level=CACHE.ALL, loop=None):
-        """ Create a new Matrix Client object.
+        """
+        reate a new Matrix Client object.
 
         Args:
-            base_url (str): The url of the HS preceding /_matrix.
+            base_url (str):
+                The url of the HS preceding /_matrix.
                 e.g. (ex: https://localhost:8008 )
-            token (str): Optional. If you have an access token
-                supply it here.
-            user_id (str): Optional. You must supply the user_id
-                (as obtained when initially logging in to obtain
-                the token) if supplying a token; otherwise, ignored.
-            valid_cert_check (bool): Check the homeservers
-                certificate on connections?
-            cache_level (CACHE): One of CACHE.NONE, CACHE.SOME, or
-                CACHE.ALL(defined in module namespace).
-            loop (BaseEventLoop): Optional. Asyncio event loop.
-
+            token (Optional[str]):
+                If you have an access token supply it here.
+            user_id (Optional[str]):
+                You must supply the user_id
+                (as obtained when initially logging in to obtain the token)
+                if supplying a token; otherwise, ignored.
+            valid_cert_check (bool):
+                Check the homeservers certificate on connections?
+            cache_level (CACHE):
+                One of CACHE.NONE, CACHE.SOME, or CACHE.ALL
+                (defined in enums).
+            loop (Optional[BaseEventLoop]):
+                Optional. Asyncio event loop.
         Returns:
             MatrixBaseClient
 
@@ -142,14 +127,18 @@ class MatrixBaseClient(object):
         """
         Default exception handling for exceptions during sync.
         This is expected to be overwritten in a subclass.
+
         Args:
-            e: The exception raised.
+            e (Exception): The exception raised.
         """
         logger.exception(f"Exception thrown during sync: {e}")
 
-    async def register_as_guest(self):
-        """ Register a guest account on this HS.
+    async def register_as_guest(self) -> str:
+        """
+        Register a guest account on this HS.
+
         Note: HS must have guest registration enabled.
+
         Returns:
             str: Access Token
         Raises:
@@ -158,8 +147,9 @@ class MatrixBaseClient(object):
         response = await self.api.register(kind='guest')
         return await self._post_registration(response)
 
-    async def register_with_password(self, username, password):
-        """ Register for a new account on this HS.
+    async def register_with_password(self, username, password) -> str:
+        """
+        Register for a new account on this HS.
 
         Args:
             username (str): Account username
@@ -180,7 +170,7 @@ class MatrixBaseClient(object):
         )
         return await self._post_registration(response)
 
-    async def _post_registration(self, response):
+    async def _post_registration(self, response) -> str:
         self.user_id = response["user_id"]
         self.token = response["access_token"]
         self.hs = response["home_server"]
@@ -188,8 +178,9 @@ class MatrixBaseClient(object):
         await self.sync()
         return self.token
 
-    async def login_with_password_no_sync(self, username, password):
-        """ Login to the homeserver.
+    async def login_with_password_no_sync(self, username, password) -> str:
+        """
+        Login to the homeserver.
 
         Args:
             username (str): Account username
@@ -210,8 +201,9 @@ class MatrixBaseClient(object):
         self.api.token = self.token
         return self.token
 
-    async def login_with_password(self, username, password, limit=10):
-        """ Login to the homeserver.
+    async def login_with_password(self, username, password, limit=10) -> str:
+        """
+        Login to the homeserver.
 
         Args:
             username (str): Account username
@@ -233,11 +225,11 @@ class MatrixBaseClient(object):
         return token
 
     async def logout(self):
-        """ Logout from the homeserver.
-        """
+        """ Logout from the homeserver."""
         await self.api.logout()
 
-    async def create_room(self, alias=None, is_public=False, invitees=()):
+    async def create_room(self, alias=None, is_public=False,
+                          invitees=()) -> Room:
         """ Create a new room on the homeserver.
 
         Args:
@@ -254,8 +246,9 @@ class MatrixBaseClient(object):
         response = await self.api.create_room(alias, is_public, invitees)
         return self._mkroom(response["room_id"])
 
-    async def join_room(self, room_id_or_alias):
-        """ Join a room.
+    async def join_room(self, room_id_or_alias) -> Room:
+        """
+        Join a room.
 
         Args:
             room_id_or_alias (str): Room ID or an alias.
@@ -272,12 +265,13 @@ class MatrixBaseClient(object):
         )
         return self._mkroom(room_id)
 
-    async def listen_forever(self, timeout_ms=30000):
-        """ Keep listening for events forever.
+    async def _listen_forever(self, timeout_ms=30000):
+        """
+        Keep listening for events forever.
 
         Args:
-            timeout_ms (int): How long to poll the Home Server for before
-               retrying.
+            timeout_ms (int):
+                How long to poll the Home Server for before retrying.
         """
         bad_sync_timeout = 5000
         self.should_listen = True
@@ -304,11 +298,11 @@ class MatrixBaseClient(object):
         Start the client to listen for events.
 
         Args:
-            timeout_ms(int): How long to poll the Home Server for before
-               retrying.
+            timeout_ms(int):
+                How long to poll the Home Server for before retrying.
         """
         task = self.create_task(
-            self.listen_forever(timeout_ms)
+            self._listen_forever(timeout_ms)
         )
         self.sync_task = task
         self.should_listen = True
@@ -321,8 +315,9 @@ class MatrixBaseClient(object):
             self.sync_task = None
             self.loop.stop()
 
-    async def upload(self, content, content_type):
-        """ Upload content to the home server and recieve a MXC url.
+    async def upload(self, content: bytes, content_type: str):
+        """
+        Upload content to the home server and recieve a MXC url.
 
         Args:
             content (bytes): The data of the content.
@@ -382,6 +377,13 @@ class MatrixBaseClient(object):
         self.room_event_queue.put_nowait((state_event, current_room))
 
     async def sync(self, timeout_ms=30000):
+        """
+        Preforms a sync action.
+
+        Args:
+            timeout_ms(int):
+                How long to poll the Home Server for before retrying.
+        """
         # TODO: Deal with left rooms
         response = await self.api.sync(self.sync_token, timeout_ms,
                                        filter=self.sync_filter)
@@ -440,8 +442,9 @@ class MatrixBaseClient(object):
                 self.room_event_queue.put_nowait((event, room))
                 self.event_queue.put_nowait(event)
 
-    def get_user(self, user_id):
-        """ Return a User by their id.
+    def get_user(self, user_id) -> User:
+        """
+        Return a User by their id.
 
         NOTE: This function only returns a user object, it does not verify
             the user with the Home Server.
@@ -452,8 +455,9 @@ class MatrixBaseClient(object):
 
         return User(self.api, user_id)
 
-    async def remove_room_alias(self, room_alias):
-        """Remove mapping of an alias
+    async def remove_room_alias(self, room_alias) -> bool:
+        """
+        Remove mapping of an alias
 
         Args:
             room_alias(str): The alias to be removed.
@@ -467,9 +471,57 @@ class MatrixBaseClient(object):
         except MatrixRequestError:
             return False
 
-    def create_task(self, coro_or_future):
+    def create_task(self, coro_or_future) -> Future:
+        """
+        Create/Adds a task to the event loop that the client is
+        running on.
+
+        Args:
+            coro_or_future (Union[Coroutine, Awaitable, Future]):
+                Warp a coroutine or an awaitable in a future. If it
+                is a future already, return it directly.
+
+        Returns:
+            Future: The future object created/passed in as argument.
+
+        See Also:
+            asyncio.ensure_future
+        """
         return ensure_future(coro_or_future, loop=self.loop)
 
 
 class MatrixListenerClient(ListenerClientMixin, MatrixBaseClient):
+    """
+    The client API for Matrix. For the raw HTTP calls, see MatrixHttpApi.
+    This class also implements listener functionalities.
+
+    Args:
+        see `MatrixBaseClient`
+    Returns:
+        `MatrixListenerClient`
+
+    Raises:
+        `MatrixRequestError`, `ValueError`
+
+    Examples:
+
+        Send a message with an already logged in user::
+
+            async def main():
+                client = MatrixListenerClient(
+                    "https://matrix.org",
+                    token="foobar",
+                    user_id="@foobar:matrix.org"
+                )
+                await client.sync() # NB: Initial sync
+                rooms = client.rooms  # NB: From initial sync
+                client.add_listener(func)  # NB: event stream callback
+                client.add_room_listener(func, rooms[0].room_id) # NB: callbacks just for this room.
+                room = await client.join_room("#matrix:matrix.org")
+                response = await room.send_text("Hello!")
+                response = await room.kick("@bob:matrix.org")
+
+    See Also:
+        `MatrixBaseClient`, `ListenerClientMixin`
+    """
     pass
