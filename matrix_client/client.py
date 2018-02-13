@@ -25,6 +25,7 @@ from .room import Room
 from .user import User
 
 logger = logging.getLogger(__name__)
+logging.captureWarnings(True)
 
 
 class MatrixBaseClient(object):
@@ -44,7 +45,8 @@ class MatrixBaseClient(object):
         valid_cert_check (bool):
             Check the homeservers certificate on connections?
         sync_filter_limit (int):
-            The timeline event count limit for each sync.
+             Deprecated. How many messages to return when syncing.
+             This will be replaced by a filter API in a later release.
         cache_level (CACHE):
             One of CACHE.NONE, CACHE.SOME, or CACHE.ALL
             (defined in enums).
@@ -71,7 +73,7 @@ class MatrixBaseClient(object):
     """
 
     def __init__(self, base_url, token=None, user_id=None,
-                 valid_cert_check=True, sync_filter_limit=20,
+                 valid_cert_check=True, sync_filter_limit=None,
                  cache_level=CACHE.ALL, loop=None):
         """
         reate a new Matrix Client object.
@@ -89,7 +91,8 @@ class MatrixBaseClient(object):
             valid_cert_check (bool):
                 Check the homeservers certificate on connections?
             sync_filter_limit (int):
-                The timeline event count limit for each sync.
+                Deprecated. How many messages to return when syncing.
+                This will be replaced by a filter API in a later release.
             cache_level (CACHE):
                 One of CACHE.NONE, CACHE.SOME, or CACHE.ALL
                 (defined in enums).
@@ -101,6 +104,13 @@ class MatrixBaseClient(object):
         Raises:
             MatrixRequestError, ValueError
         """
+        if sync_filter_limit is not None:
+            logger.warning(
+                "sync_filter_limit is deprecated.",
+                DeprecationWarning
+            )
+        else:
+            sync_filter_limit = 20
         if token is not None and user_id is None:
             raise ValueError("must supply user_id along with token")
         self.loop = loop or get_event_loop()
@@ -179,14 +189,6 @@ class MatrixBaseClient(object):
         )
         return await self._post_registration(response)
 
-    async def _post_registration(self, response) -> str:
-        self.user_id = response["user_id"]
-        self.token = response["access_token"]
-        self.hs = response["home_server"]
-        self.api.token = self.token
-        await self.sync()
-        return self.token
-
     async def login_with_password_no_sync(self, username, password) -> str:
         """
         Login to the homeserver.
@@ -210,7 +212,7 @@ class MatrixBaseClient(object):
         self.api.token = self.token
         return self.token
 
-    async def login_with_password(self, username, password, limit=10) -> str:
+    async def login_with_password(self, username, password, limit=None) -> str:
         """
         Login to the homeserver.
 
@@ -229,6 +231,14 @@ class MatrixBaseClient(object):
         token = await self.login_with_password_no_sync(username, password)
 
         # Limit Filter
+        if limit is not None:
+            logger.warning(
+                "sync_filter_limit is deprecated.",
+                DeprecationWarning
+            )
+        else:
+            limit = 10
+
         self.sync_filter = '{ "room": { "timeline" : { "limit" : %i } } }' % limit
         await self.sync()
         return token
@@ -273,34 +283,6 @@ class MatrixBaseClient(object):
             response["room_id"] if "room_id" in response else room_id_or_alias
         )
         return self._mkroom(room_id)
-
-    async def _listen_forever(self, timeout_ms=30000):
-        """
-        Keep listening for events forever.
-
-        Args:
-            timeout_ms (int):
-                How long to poll the Home Server for before retrying.
-        """
-        bad_sync_timeout = 5000
-        self.should_listen = True
-        while self.should_listen:
-            try:
-                await self.sync(timeout_ms)
-                bad_sync_timeout = 5
-            except MatrixRequestError as e:
-                logger.warning("A MatrixRequestError occured during sync.")
-                if e.code >= 500:
-                    logger.warning(
-                        "Problem occured serverside. Waiting %i seconds",
-                        bad_sync_timeout)
-                    await sleep(bad_sync_timeout)
-                    bad_sync_timeout = min(bad_sync_timeout * 2,
-                                           self.bad_sync_timeout_limit)
-                else:
-                    self.create_task(self.on_exception(e))
-            except Exception as e:
-                self.create_task(self.on_exception(e))
 
     def start_client(self, timeout_ms=30000):
         """
@@ -350,40 +332,52 @@ class MatrixBaseClient(object):
                 content="Upload failed: %s" % e
             )
 
-    def _mkroom(self, room_id):
-        self.rooms[room_id] = Room(self, room_id)
-        return self.rooms[room_id]
+    def get_user(self, user_id) -> User:
+        """
+        Return a User by their id.
 
-    def _process_state_event(self, state_event, current_room):
-        etype = state_event.type
-        if not etype:
-            return  # ignore event
-        econtent = state_event.content
-        # Don't keep track of room state if caching turned off
-        if self._cache_level != CACHE.NONE:
-            if etype == "m.room.name":
-                current_room.name = econtent.get("name")
-            elif etype == "m.room.canonical_alias":
-                current_room.canonical_alias = econtent.get("alias")
-            elif etype == "m.room.topic":
-                current_room.topic = econtent.get("topic")
+        NOTE: This function only returns a user object, it does not verify
+            the user with the Home Server.
 
-            elif etype == "m.room.aliases":
-                current_room.aliases = econtent.get("aliases")
+        Args:
+            user_id (str): The matrix user id of a user.
+        """
 
-            elif etype == "m.room.member" and self._cache_level == CACHE.ALL:
-                # tracking room members can be large e.g. #matrix:matrix.org
-                if econtent["membership"] == "join":
-                    current_room._mkmembers(User(
-                        self.api,
-                        state_event.state_key,
-                        econtent.get("displayname")
-                    ))
-                elif econtent["membership"] \
-                        in {"leave", "kick", "invite"}:
-                    current_room._rmmembers(state_event.state_key)
+        return User(self.api, user_id)
 
-        self.room_event_queue.put_nowait((state_event, current_room))
+    async def remove_room_alias(self, room_alias) -> bool:
+        """
+        Remove mapping of an alias
+
+        Args:
+            room_alias(str): The alias to be removed.
+
+        Returns:
+            bool: True if the alias is removed, False otherwise.
+        """
+        try:
+            await self.api.remove_room_alias(room_alias)
+            return True
+        except MatrixRequestError:
+            return False
+
+    def create_task(self, coro_or_future) -> Future:
+        """
+        Create/Adds a task to the event loop that the client is
+        running on.
+
+        Args:
+            coro_or_future (Union[Coroutine, Awaitable, Future]):
+                Warp a coroutine or an awaitable in a future. If it
+                is a future already, return it directly.
+
+        Returns:
+            Future: The future object created/passed in as argument.
+
+        See Also:
+            asyncio.ensure_future
+        """
+        return ensure_future(coro_or_future, loop=self.loop)
 
     async def sync(self, timeout_ms=30000):
         """
@@ -451,52 +445,76 @@ class MatrixBaseClient(object):
                 self.room_event_queue.put_nowait((event, room))
                 self.event_queue.put_nowait(event)
 
-    def get_user(self, user_id) -> User:
+    async def _listen_forever(self, timeout_ms=30000):
         """
-        Return a User by their id.
-
-        NOTE: This function only returns a user object, it does not verify
-            the user with the Home Server.
+        Keep listening for events forever.
 
         Args:
-            user_id (str): The matrix user id of a user.
+            timeout_ms (int):
+                How long to poll the Home Server for before retrying.
         """
+        bad_sync_timeout = 5000
+        self.should_listen = True
+        while self.should_listen:
+            try:
+                await self.sync(timeout_ms)
+                bad_sync_timeout = 5
+            except MatrixRequestError as e:
+                logger.warning("A MatrixRequestError occured during sync.")
+                if e.code >= 500:
+                    logger.warning(
+                        "Problem occured serverside. Waiting %i seconds",
+                        bad_sync_timeout)
+                    await sleep(bad_sync_timeout)
+                    bad_sync_timeout = min(bad_sync_timeout * 2,
+                                           self.bad_sync_timeout_limit)
+                else:
+                    self.create_task(self.on_exception(e))
+            except Exception as e:
+                self.create_task(self.on_exception(e))
 
-        return User(self.api, user_id)
+    async def _post_registration(self, response) -> str:
+        self.user_id = response["user_id"]
+        self.token = response["access_token"]
+        self.hs = response["home_server"]
+        self.api.token = self.token
+        await self.sync()
+        return self.token
 
-    async def remove_room_alias(self, room_alias) -> bool:
-        """
-        Remove mapping of an alias
+    def _mkroom(self, room_id):
+        self.rooms[room_id] = Room(self, room_id)
+        return self.rooms[room_id]
 
-        Args:
-            room_alias(str): The alias to be removed.
+    def _process_state_event(self, state_event, current_room):
+        etype = state_event.type
+        if not etype:
+            return  # ignore event
+        econtent = state_event.content
+        # Don't keep track of room state if caching turned off
+        if self._cache_level != CACHE.NONE:
+            if etype == "m.room.name":
+                current_room.name = econtent.get("name")
+            elif etype == "m.room.canonical_alias":
+                current_room.canonical_alias = econtent.get("alias")
+            elif etype == "m.room.topic":
+                current_room.topic = econtent.get("topic")
 
-        Returns:
-            bool: True if the alias is removed, False otherwise.
-        """
-        try:
-            await self.api.remove_room_alias(room_alias)
-            return True
-        except MatrixRequestError:
-            return False
+            elif etype == "m.room.aliases":
+                current_room.aliases = econtent.get("aliases")
 
-    def create_task(self, coro_or_future) -> Future:
-        """
-        Create/Adds a task to the event loop that the client is
-        running on.
+            elif etype == "m.room.member" and self._cache_level == CACHE.ALL:
+                # tracking room members can be large e.g. #matrix:matrix.org
+                if econtent["membership"] == "join":
+                    current_room._mkmembers(User(
+                        self.api,
+                        state_event.state_key,
+                        econtent.get("displayname")
+                    ))
+                elif econtent["membership"] \
+                        in {"leave", "kick", "invite"}:
+                    current_room._rmmembers(state_event.state_key)
 
-        Args:
-            coro_or_future (Union[Coroutine, Awaitable, Future]):
-                Warp a coroutine or an awaitable in a future. If it
-                is a future already, return it directly.
-
-        Returns:
-            Future: The future object created/passed in as argument.
-
-        See Also:
-            asyncio.ensure_future
-        """
-        return ensure_future(coro_or_future, loop=self.loop)
+        self.room_event_queue.put_nowait((state_event, current_room))
 
 
 class MatrixListenerClient(ListenerClientMixin, MatrixBaseClient):
