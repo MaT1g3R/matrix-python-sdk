@@ -236,7 +236,7 @@ class ListenerClientMixin:
         """
         self.create_task(self._consume_events())
         self.create_task(self._consume_room_events())
-        return super().start_client(timeout_ms)
+        super().start_client(timeout_ms)
 
     def _help_dispatch(self, listener, event, room):
         if room:
