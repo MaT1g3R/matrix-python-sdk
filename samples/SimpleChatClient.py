@@ -42,6 +42,7 @@ async def get_input(room, loop):
         if msg == "/quit":
             await room.client.logout()
             room.client.stop_client()
+            return
         else:
             await room.send_text(msg)
 
@@ -72,7 +73,7 @@ async def main(loop, host, username, password, room_id_alias):
 
     client.add_room_listener(on_message, room_id=room.room_id)
     client.create_task(get_input(room, loop))
-    client.start_client()
+    return client
 
 
 if __name__ == '__main__':
@@ -84,8 +85,5 @@ if __name__ == '__main__':
     else:
         room_id_alias = samples_common.get_input("Room ID/Alias: ")
     loop = get_event_loop()
-    ensure_future(
-        main(loop, host, username, password, room_id_alias),
-        loop=loop
-    )
-    loop.run_forever()
+    client = loop.run_until_complete(main(loop, host, username, password, room_id_alias))
+    client.start_client()
