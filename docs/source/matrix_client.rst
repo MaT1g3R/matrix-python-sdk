@@ -16,3 +16,11 @@ matrix_client.api
     :members:
     :undoc-members:
     :show-inheritance:
+
+matrix_client.listener
+--------------------------
+
+.. automodule:: matrix_client.listener
+    :members:
+    :undoc-members:
+    :show-inheritance:
