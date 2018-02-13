@@ -312,7 +312,7 @@ class MatrixBaseClient(object):
         )
         self.sync_task = task
         self.should_listen = True
-        return task
+        self.loop.run_forever()
 
     def stop_client(self):
         """ Stop the client from listening event."""
