@@ -9,6 +9,11 @@ from .enums import ListenerType
 
 @attr.s(frozen=True, slots=True)
 class Listener:
+    """
+    Listener class that represents a listener callback.
+
+    This is not meant to be created by the user.
+    """
     callback = attr.ib()
     client = attr.ib()
     uuid = attr.ib(default=uuid4(), init=False)
@@ -37,6 +42,57 @@ class Listener:
 
 
 class ListenerClientMixin:
+    """
+    Mixin class intended to be used with `MatrixBaseClient`.
+    Use this class BEFORE `MatrixBaseClient` in the class
+    declearation.
+
+    Args:
+        see `MatrixBaseClient`
+
+    Returns:
+        `ListenerClientMixin`
+
+    Examples:
+
+        Create a client class with listener functions::
+
+            class MyClient(ListenerClientMixin, MatrixBaseClient):
+                pass
+
+            async def my_listener(event):
+                pass
+
+            client = MyClient('https://matrix.org')
+            client.add_listener(my_listener)
+
+        Incoming event callbacks (scopes)::
+
+            async def global_callback(event):
+                pass
+
+            async def presence_callback(event):
+                pass
+
+            async def invite_callback(event):
+                pass
+
+            async def leave_callback(event):
+                pass
+
+            async def ephemeral_callback(event):
+                pass
+
+            async def room_global_callback(event, room):
+                pass
+
+            async def room_state_callback(event, room):
+                pass
+
+            async def room_ephemeral_callback(event, room):
+                pass
+    """
+
     def __init__(self, *args, **kwargs):
         self.listeners = defaultdict(set)
 
@@ -48,29 +104,46 @@ class ListenerClientMixin:
         """
         Default listener exception handler. This is expected to be
         overwritten in a subclass.
+
         Args:
-            e: The exception raised by the listener.
+            e (Exception): The exception raised by the listener.
         """
         self.logger.warning(str(e))
 
-    def add_listener(
-            self, callback, event_type=None,
-            listener_type=ListenerType.GLOBAL
-    ) -> Listener:
-        """ Add a listener that will send a callback when the client recieves
-        an event.
+    def add_listener(self, callback, *, event_type=None,
+                     listener_type=ListenerType.GLOBAL) -> Listener:
+        """
+        Add a listener that will send a callback when the client
+        recieves an event.
 
         Args:
-            callback (coro(event)):  Callback called when an event arrives.
-            event_type (str): The event_type to filter for.
-            listener_type (ListenerType): The type of the listener.
-                                          Defualts to global.
+            callback (coroutinefunction(event)):
+                Callback called when an event arrives.
+            event_type (str):
+                The event_type to filter for.
+            listener_type (ListenerType):
+                The type of the listener. Defualts to global.
         Returns:
             The listener created.
+
+        Notes:
+            The same event object is potentially passed to multiple
+            listeners. So mutating the event object is highly
+            discouraged.
+
+            The coroutine function passed to the `callback` argument
+            should NOT block, since it will block the entire event
+            loop. Doing IO (like opening files) is one example of a
+            blocking operation. If blocking operation is not avoidable,
+            please use the `loop.run_in_executor` function.
+
+        See Also:
+            https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.AbstractEventLoop.run_in_executor
         """
         if listener_type == ListenerType.STATE:
-            raise ValueError("Client listeners cannot have STATE"
-                             " as listener_type")
+            raise ValueError(
+                "Client listeners cannot have STATE as listener_type"
+            )
         listener = Listener(
             callback=callback,
             client=self,
@@ -80,15 +153,42 @@ class ListenerClientMixin:
         self.listeners[listener_type].add(listener)
         return listener
 
-    def add_room_listener(
-            self, callback, room_id,
-            event_type=None, listener_type=ListenerType.GLOBAL
-    ) -> Listener:
-        if listener_type not in {
-            ListenerType.GLOBAL,
-            ListenerType.STATE,
-            ListenerType.EPHEMERAL
-        }:
+    def add_room_listener(self, callback, room_id, *, event_type=None,
+                          listener_type=ListenerType.GLOBAL) -> Listener:
+        """
+        Add a listener to handle events for a certain room.
+
+        Args:
+            callback (coroutinefunction(event, room)):
+                Callback called when an event arrives.
+            room_id (str):
+                The room id of the room for this listener to listen.
+            event_type (str):
+                The event type to filter for.
+            listener_type:
+                The type of the listener. Defualts to global.
+        Returns:
+            The listener created.
+
+        Notes:
+            The same event object is potentially passed to multiple
+            listeners. So mutating the event object is highly
+            discouraged.
+
+            The coroutine function passed to the `callback` argument
+            should NOT block, since it will block the entire event
+            loop. Doing IO (like opening files) is one example of a
+            blocking operation. If blocking operation is not avoidable,
+            please use the `loop.run_in_executor` function.
+
+        See Also:
+            https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.AbstractEventLoop.run_in_executor
+        """
+        if listener_type not in (
+                ListenerType.GLOBAL,
+                ListenerType.STATE,
+                ListenerType.EPHEMERAL
+        ):
             raise ValueError(
                 "Room listener must have listener_type of "
                 "GLOBAL, STATE, or EPHEMERAL"
@@ -106,7 +206,7 @@ class ListenerClientMixin:
 
     def remove_listener(self, listener):
         """
-        Remove listener.
+        Remove a listener.
 
         Args:
             listener: The listener to remove
@@ -114,7 +214,9 @@ class ListenerClientMixin:
         self.listeners[listener.listener_type].remove(listener)
 
     def remove_room_listener(self, listener):
-        """ Remove room listener.
+        """
+        Remove a room listener.
+
         Args:
             listener: The listener to remove
         """
@@ -129,8 +231,8 @@ class ListenerClientMixin:
         the event consumers to dispatch events to listeners.
 
         Args:
-            timeout_ms(int): How long to poll the Home Server for before
-                             retrying.
+            timeout_ms(int):
+                How long to poll the Home Server for before retrying.
         """
         self.create_task(self._consume_events())
         self.create_task(self._consume_room_events())
