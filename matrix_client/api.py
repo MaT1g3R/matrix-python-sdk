@@ -194,22 +194,6 @@ class MatrixHttpApi(object):
 
         return await self._send("POST", path)
 
-    async def event_stream(self, from_token, timeout=30000):
-        """ Deprecated. Use sync instead.
-        Performs /events
-
-        Args:
-            from_token (str): The 'from' query parameter.
-            timeout (int): Optional. The 'timeout' query parameter.
-        """
-        path = "/events"
-        return await self._send(
-            "GET", path, query_params={
-                "timeout": timeout,
-                "from": from_token
-            }
-        )
-
     async def send_state_event(self, room_id, event_type, content,
                                state_key="",
                                timestamp=None):
