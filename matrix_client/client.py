@@ -43,6 +43,13 @@ class MatrixBaseClient(object):
             if supplying a token; otherwise, ignored.
         valid_cert_check (bool):
             Check the homeservers certificate on connections?
+        sync_filter_limit (int):
+            The timeline event count limit for each sync.
+        cache_level (CACHE):
+            One of CACHE.NONE, CACHE.SOME, or CACHE.ALL
+            (defined in enums).
+        loop (Optional[BaseEventLoop]):
+            Optional. Asyncio event loop.
 
     Returns:
         `MatrixBaseClient`
@@ -72,7 +79,7 @@ class MatrixBaseClient(object):
         Args:
             base_url (str):
                 The url of the HS preceding /_matrix.
-                e.g. (ex: https://localhost:8008 )
+                e.g. (ex: https://matrix.org)
             token (Optional[str]):
                 If you have an access token supply it here.
             user_id (Optional[str]):
@@ -81,6 +88,8 @@ class MatrixBaseClient(object):
                 if supplying a token; otherwise, ignored.
             valid_cert_check (bool):
                 Check the homeservers certificate on connections?
+            sync_filter_limit (int):
+                The timeline event count limit for each sync.
             cache_level (CACHE):
                 One of CACHE.NONE, CACHE.SOME, or CACHE.ALL
                 (defined in enums).
