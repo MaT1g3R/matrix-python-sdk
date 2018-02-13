@@ -46,22 +46,25 @@ class MatrixHttpResponse(NamedTuple):
 
 
 class MatrixHttpApi(object):
-    """Contains all raw Matrix HTTP Client-Server API calls.
+    """
+    Contains all raw Matrix HTTP Client-Server API calls.
 
     For room and sync handling, consider using MatrixClient.
 
     Args:
         base_url (str): The home server URL e.g. 'http://localhost:8008'
-        token (Optional[str]): Optional. The client's access token.
-        identity (str): Optional. The mxid to act as (For application services only).
-        loop (BaseEventLoop): Optional. The asyncio event loop.
+        token (Optional[str]): The client's access token.
+        identity (Optional[str]):
+            The mxid to act as (For application services only).
+        loop (Optional[AbstractEventLoop]): The asyncio event loop.
 
     Examples:
         Create a client and send a message::
 
-            matrix = MatrixHttpApi("https://matrix.org", token="foobar")
-            response = matrix.sync()
-            response = matrix.send_message("!roomid:matrix.org", "Hello!")
+            async def main():
+                matrix = MatrixHttpApi("https://matrix.org", token="foobar")
+                response = await matrix.sync()
+                response = await matrix.send_message("!roomid:matrix.org", "Hello!")
     """
 
     def __init__(self, base_url, token=None, identity=None, loop=None):
@@ -75,15 +78,20 @@ class MatrixHttpApi(object):
 
     async def sync(self, since=None, timeout_ms=30000, filter=None,
                    full_state=None, set_presence=None):
-        """ Perform a sync request.
+        """
+        Perform a sync request.
 
         Args:
-            since (str): Optional. A token which specifies where to continue a sync from.
-            timeout_ms (int): Optional. The time in milliseconds to wait.
+            since (Optional[str]):
+                A token which specifies where to continue a sync from.
+            timeout_ms (Optional[int]):
+                The time in milliseconds to wait.
             filter (int|str): Either a Filter ID or a JSON string.
-            full_state (bool): Return the full state for every room the user has joined
+            full_state (bool):
+                Return the full state for every room the user has joined
                 Defaults to false.
-            set_presence (str): Should the client be marked as "online" or" offline"
+            set_presence (str):
+                Should the client be marked as "online" or" offline"
         """
 
         request = {
@@ -117,20 +125,20 @@ class MatrixHttpApi(object):
 
                 | Should be specified for all non-guest registrations.
 
-                | username (string): The local part of the desired Matrix ID.
+                | username (str): The local part of the desired Matrix ID.
                 |     If omitted, the homeserver MUST generate a Matrix ID local part.
 
-                | bind_email (boolean): If true, the server binds the email used for
+                | bind_email (bool): If true, the server binds the email used for
                 |     authentication to the Matrix ID with the ID Server.
                 |     *Email Registration not currently supported*
 
-                | password (string): Required. The desired password for the account.
+                | password (str): Required. The desired password for the account.
 
                 | auth (dict): Authentication Data
-                |     session (string):  The value of the session key given by the
+                |     session (str):  The value of the session key given by the
                 |         homeserver.
 
-                |     type (string): Required. The login type that the client is
+                |     type (str): Required. The login type that the client is
                 |         attempting to complete. "m.login.dummy" is the only
                 |         non-interactive type.
 
@@ -145,7 +153,8 @@ class MatrixHttpApi(object):
         )
 
     async def login(self, login_type, **kwargs):
-        """Perform /login.
+        """
+        Perform /login.
 
         Args:
             login_type (str): The value for the 'type' key.
@@ -160,12 +169,12 @@ class MatrixHttpApi(object):
         return await self._send("POST", "/login", content=content)
 
     async def logout(self):
-        """Perform /logout.
-        """
+        """Perform /logout."""
         return await self._send("POST", "/logout")
 
     async def create_room(self, alias=None, is_public=False, invitees=()):
-        """Perform /createRoom.
+        """
+        Perform /createRoom.
 
         Args:
             alias (str): Optional. The room alias name to set for this room.
@@ -182,7 +191,8 @@ class MatrixHttpApi(object):
         return await self._send("POST", "/createRoom", content)
 
     async def join_room(self, room_id_or_alias):
-        """Performs /join/$room_id
+        """
+        Performs /join/$room_id
 
         Args:
             room_id_or_alias (str): The room ID or room alias to join.
@@ -197,7 +207,8 @@ class MatrixHttpApi(object):
     async def send_state_event(self, room_id, event_type, content,
                                state_key="",
                                timestamp=None):
-        """Perform PUT /rooms/$room_id/state/$event_type
+        """
+        Perform PUT /rooms/$room_id/state/$event_type
 
         Args:
             room_id(str): The room ID to send the state event in.
@@ -219,7 +230,8 @@ class MatrixHttpApi(object):
     async def send_message_event(self, room_id, event_type, content,
                                  txn_id=None,
                                  timestamp=None):
-        """Perform PUT /rooms/$room_id/send/$event_type
+        """
+        Perform PUT /rooms/$room_id/send/$event_type
 
         Args:
             room_id (str): The room ID to send the message event in.
@@ -243,7 +255,8 @@ class MatrixHttpApi(object):
 
     async def redact_event(self, room_id, event_id, reason=None, txn_id=None,
                            timestamp=None):
-        """Perform PUT /rooms/$room_id/redact/$event_id/$txn_id/
+        """
+        Perform PUT /rooms/$room_id/redact/$event_id/$txn_id/
 
         Args:
             room_id(str): The room ID to redact the message event in.
@@ -267,11 +280,19 @@ class MatrixHttpApi(object):
             params["ts"] = timestamp
         return await self._send("PUT", path, content, query_params=params)
 
-    # content_type can be a image,audio or video
-    # extra information should be supplied, see
-    # https://matrix.org/docs/spec/r0.0.1/client_server.html
     async def send_content(self, room_id, item_url, item_name, msg_type,
                            extra_information=None, timestamp=None):
+        """
+        Send media content.
+
+        Args:
+            room_id(str): The room ID to redact the message event in.
+            item_url(str): The url to the content.
+            item_name(str): The name of the content.
+            msg_type(str): one of `m.image`, `m.audio`, `m.video`
+            extra_information(dict): see https://matrix.org/docs/spec/client_server/r0.3.0.html#m-room-message-msgtypes
+            timestamp (int): Set origin_server_ts (For application services only)
+        """
         if extra_information is None:
             extra_information = {}
 
@@ -289,7 +310,8 @@ class MatrixHttpApi(object):
     async def send_location(self, room_id, geo_uri, name, thumb_url=None,
                             thumb_info=None,
                             timestamp=None):
-        """Send m.location message event
+        """
+        Send m.location message event
 
         Args:
             room_id (str): The room ID to send the event in.
@@ -446,25 +468,26 @@ class MatrixHttpApi(object):
 
         Example::
 
-            api = MatrixHttpApi("http://example.com", token="foobar")
-            api.set_power_levels("!exampleroom:example.com",
-                {
-                    "ban": 50, # defaults to 50 if unspecified
-                    "events": {
-                        "m.room.name": 100, # must have PL 100 to change room name
-                        "m.room.power_levels": 100 # must have PL 100 to change PLs
-                    },
-                    "events_default": 0, # defaults to 0
-                    "invite": 50, # defaults to 50
-                    "kick": 50, # defaults to 50
-                    "redact": 50, # defaults to 50
-                    "state_default": 50, # defaults to 50 if m.room.power_levels exists
-                    "users": {
-                        "@someguy:example.com": 100 # defaults to 0
-                    },
-                    "users_default": 0 # defaults to 0
-                }
-            )
+            async def main():
+                api = MatrixHttpApi("http://example.com", token="foobar")
+                await api.set_power_levels("!exampleroom:example.com",
+                    {
+                        "ban": 50, # defaults to 50 if unspecified
+                        "events": {
+                            "m.room.name": 100, # must have PL 100 to change room name
+                            "m.room.power_levels": 100 # must have PL 100 to change PLs
+                        },
+                        "events_default": 0, # defaults to 0
+                        "invite": 50, # defaults to 50
+                        "kick": 50, # defaults to 50
+                        "redact": 50, # defaults to 50
+                        "state_default": 50, # defaults to 50 if m.room.power_levels exists
+                        "users": {
+                            "@someguy:example.com": 100 # defaults to 0
+                        },
+                        "users_default": 0 # defaults to 0
+                    }
+                )
         """
         # Synapse returns M_UNKNOWN if body['events'] is omitted,
         #  as of 2016-10-31

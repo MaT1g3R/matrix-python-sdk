@@ -30,7 +30,8 @@ logging.captureWarnings(True)
 
 class MatrixBaseClient(object):
     """
-    The client API for Matrix. For the raw HTTP calls, see MatrixHttpApi.
+    The client API for Matrix. For the raw HTTP calls,
+    see :class:`matrix_client.api.MatrixHttpApi`.
 
     Args:
         base_url (str):
@@ -50,14 +51,14 @@ class MatrixBaseClient(object):
         cache_level (CACHE):
             One of CACHE.NONE, CACHE.SOME, or CACHE.ALL
             (defined in enums).
-        loop (Optional[BaseEventLoop]):
+        loop (Optional[AbstractEventLoop]):
             Optional. Asyncio event loop.
 
     Returns:
-        `MatrixBaseClient`
+        :class:`MatrixBaseClient`
 
     Raises:
-        `MatrixRequestError`, `ValueError`
+        :class:`MatrixRequestError`, :class:`ValueError`
 
     Examples:
 
@@ -96,13 +97,13 @@ class MatrixBaseClient(object):
             cache_level (CACHE):
                 One of CACHE.NONE, CACHE.SOME, or CACHE.ALL
                 (defined in enums).
-            loop (Optional[BaseEventLoop]):
+            loop (Optional[AbstractEventLoop]):
                 Optional. Asyncio event loop.
         Returns:
-            MatrixBaseClient
+            :class:`MatrixBaseClient`
 
         Raises:
-            MatrixRequestError, ValueError
+            :class:`MatrixRequestError`, :class:`ValueError`
         """
         if sync_filter_limit is not None:
             logger.warning(
@@ -161,7 +162,7 @@ class MatrixBaseClient(object):
         Returns:
             str: Access Token
         Raises:
-            MatrixRequestError
+            :class:`MatrixRequestError`
         """
         response = await self.api.register(kind='guest')
         return await self._post_registration(response)
@@ -178,7 +179,7 @@ class MatrixBaseClient(object):
             str: Access Token
 
         Raises:
-            MatrixRequestError
+            :class:`MatrixRequestError`
         """
         response = await self.api.register(
             {
@@ -201,7 +202,7 @@ class MatrixBaseClient(object):
             str: Access token
 
         Raises:
-            MatrixRequestError
+            :class:`MatrixRequestError`
         """
         response = await self.api.login(
             "m.login.password", user=username, password=password
@@ -226,7 +227,7 @@ class MatrixBaseClient(object):
             str: Access token
 
         Raises:
-            MatrixRequestError
+            :class:`MatrixRequestError`
         """
         token = await self.login_with_password_no_sync(username, password)
 
@@ -257,10 +258,10 @@ class MatrixBaseClient(object):
             invitees (str[]): A set of user ids to invite into the room.
 
         Returns:
-            Room
+            :class:`Room`
 
         Raises:
-            MatrixRequestError
+            :class:`MatrixRequestError`
         """
         response = await self.api.create_room(alias, is_public, invitees)
         return self._mkroom(response["room_id"])
@@ -273,7 +274,7 @@ class MatrixBaseClient(object):
             room_id_or_alias (str): Room ID or an alias.
 
         Returns:
-            Room
+            :class:`Room`
 
         Raises:
             MatrixRequestError
@@ -315,8 +316,10 @@ class MatrixBaseClient(object):
             content_type (str): The mimetype of the content.
 
         Raises:
-            MatrixUnexpectedResponse: If the homeserver gave a strange response
-            MatrixRequestError: If the upload failed for some reason.
+            :class:`MatrixUnexpectedResponse`:
+                If the homeserver gave a strange response
+            :class:`MatrixRequestError`:
+                If the upload failed for some reason.
         """
         try:
             response = await self.api.media_upload(content, content_type)
@@ -341,6 +344,9 @@ class MatrixBaseClient(object):
 
         Args:
             user_id (str): The matrix user id of a user.
+
+        Returns:
+            :class:`User`: The user with the user id.
         """
 
         return User(self.api, user_id)
@@ -375,7 +381,7 @@ class MatrixBaseClient(object):
             Future: The future object created/passed in as argument.
 
         See Also:
-            asyncio.ensure_future
+            `asyncio.ensure_future <https://docs.python.org/3.6/library/asyncio-task.html#asyncio.ensure_future>`_
         """
         return ensure_future(coro_or_future, loop=self.loop)
 
@@ -519,16 +525,16 @@ class MatrixBaseClient(object):
 
 class MatrixListenerClient(ListenerClientMixin, MatrixBaseClient):
     """
-    The client API for Matrix. For the raw HTTP calls, see MatrixHttpApi.
+    The client API for Matrix. For the raw HTTP calls,
+    see :class:`matrix_client.api.MatrixHttpApi`.
+
     This class also implements listener functionalities.
 
-    Args:
-        see `MatrixBaseClient`
     Returns:
-        `MatrixListenerClient`
+        :class:`MatrixListenerClient`
 
     Raises:
-        `MatrixRequestError`, `ValueError`
+        :class:`MatrixRequestError`, :class:`ValueError`
 
     Examples:
 
@@ -549,6 +555,6 @@ class MatrixListenerClient(ListenerClientMixin, MatrixBaseClient):
                 response = await room.kick("@bob:matrix.org")
 
     See Also:
-        `MatrixBaseClient`, `ListenerClientMixin`
+        :class:`MatrixBaseClient`, :class:`matrix_client.listener.ListenerClientMixin`
     """
     pass

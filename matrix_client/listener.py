@@ -47,11 +47,8 @@ class ListenerClientMixin:
     Use this class BEFORE `MatrixBaseClient` in the class
     declearation.
 
-    Args:
-        see `MatrixBaseClient`
-
     Returns:
-        `ListenerClientMixin`
+        :class:`ListenerClientMixin`
 
     Examples:
 
@@ -91,6 +88,9 @@ class ListenerClientMixin:
 
             async def room_ephemeral_callback(event, room):
                 pass
+
+    See Also:
+        :class:`matrix_client.client.MatrixBaseClient`
     """
 
     def __init__(self, *args, **kwargs):
@@ -126,7 +126,7 @@ class ListenerClientMixin:
         Returns:
             The listener created.
 
-        Notes:
+        NOTE:
             The same event object is potentially passed to multiple
             listeners. So mutating the event object is highly
             discouraged.
@@ -138,7 +138,7 @@ class ListenerClientMixin:
             please use the `loop.run_in_executor` function.
 
         See Also:
-            https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.AbstractEventLoop.run_in_executor
+            `AbstractEventLoop.run_in_executor <https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.AbstractEventLoop.run_in_executor>`_
         """
         if listener_type == ListenerType.STATE:
             raise ValueError(
@@ -170,7 +170,7 @@ class ListenerClientMixin:
         Returns:
             The listener created.
 
-        Notes:
+        NOTE:
             The same event object is potentially passed to multiple
             listeners. So mutating the event object is highly
             discouraged.
@@ -182,7 +182,7 @@ class ListenerClientMixin:
             please use the `loop.run_in_executor` function.
 
         See Also:
-            https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.AbstractEventLoop.run_in_executor
+            `AbstractEventLoop.run_in_executor <https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.AbstractEventLoop.run_in_executor>`_
         """
         if listener_type not in (
                 ListenerType.GLOBAL,

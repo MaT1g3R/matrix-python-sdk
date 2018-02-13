@@ -9,18 +9,18 @@ matrix_client.client
     :undoc-members:
     :show-inheritance:
 
-matrix_client.api
-------------------------
-
-.. automodule:: matrix_client.api
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 matrix_client.listener
 --------------------------
 
 .. automodule:: matrix_client.listener
-    :members:
+    :members: ListenerClientMixin
+    :undoc-members:
+    :show-inheritance:
+
+matrix_client.api
+------------------------
+
+.. automodule:: matrix_client.api
+    :members: MatrixHttpApi
     :undoc-members:
     :show-inheritance:
