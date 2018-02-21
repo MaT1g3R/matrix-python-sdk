@@ -44,7 +44,8 @@ setup(
     ],
     keywords='chat sdk matrix matrix.org',
     install_requires=[
-        'requests'
+        'requests',
+        'aiohttp'
     ],
     setup_requires=['pytest-runner',],
     tests_require=['pytest', 'responses',],
